@@ -5,3 +5,9 @@ node_modules/
 dist/
 coverage/
 .nyc_output/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+data/*.db
