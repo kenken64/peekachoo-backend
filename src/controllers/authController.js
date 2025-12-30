@@ -144,17 +144,24 @@ exports.completeRegistration = async (req, res) => {
             return res.status(400).json({ error: 'Verification failed' });
         }
 
-        const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
+        const { registrationInfo } = verification;
+        
+        // Handle both old and new API versions
+        const credentialId = registrationInfo.credential?.id || registrationInfo.credentialID;
+        const credentialPublicKey = registrationInfo.credential?.publicKey || registrationInfo.credentialPublicKey;
+        const counter = registrationInfo.credential?.counter ?? registrationInfo.counter ?? 0;
+        const credentialDeviceType = registrationInfo.credentialDeviceType || 'singleDevice';
+        const credentialBackedUp = registrationInfo.credentialBackedUp || false;
 
         // Store credential - store public key as base64
         prepare(`
             INSERT INTO credentials (id, user_id, public_key, counter, device_type, backed_up, transports)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
-            credential.id,
+            credentialId,
             userId,
-            Buffer.from(credential.publicKey).toString('base64'),
-            credential.counter,
+            Buffer.from(credentialPublicKey).toString('base64'),
+            counter,
             credentialDeviceType,
             credentialBackedUp ? 1 : 0,
             JSON.stringify(response.response.transports || [])
@@ -259,18 +266,31 @@ exports.completeAuthentication = async (req, res) => {
             return res.status(400).json({ error: 'Credential not found' });
         }
 
-        // Decode public key from base64
+        // IMPORTANT: Verify that the credential belongs to the user who initiated login
+        // This prevents using a different user's passkey when logging in
+        if (challengeRecord.user_id && credential.user_id !== challengeRecord.user_id) {
+            prepare('DELETE FROM challenges WHERE id = ?').run(challengeId);
+            return res.status(400).json({ 
+                error: 'Wrong passkey selected. Please select the passkey for the username you entered.' 
+            });
+        }
+
+        // Decode public key from base64 to Uint8Array (required by v10)
         const publicKeyBuffer = Buffer.from(credential.public_key, 'base64');
+        const publicKeyUint8 = new Uint8Array(publicKeyBuffer);
+        
+        // Ensure counter is a number (default to 0 if null/undefined)
+        const storedCounter = Number(credential.counter) || 0;
 
         const verification = await verifyAuthenticationResponse({
             response,
             expectedChallenge: challengeRecord.challenge,
             expectedOrigin: rpConfig.origin,
             expectedRPID: rpConfig.rpID,
-            credential: {
-                id: credential.id,
-                publicKey: publicKeyBuffer,
-                counter: credential.counter,
+            authenticator: {
+                credentialID: credential.id,
+                credentialPublicKey: publicKeyUint8,
+                counter: storedCounter,
                 transports: JSON.parse(credential.transports || '[]')
             },
             requireUserVerification: false
@@ -280,9 +300,13 @@ exports.completeAuthentication = async (req, res) => {
             return res.status(400).json({ error: 'Verification failed' });
         }
 
-        // Update counter
+        // Update counter - handle both old and new API versions
+        const newCounter = verification.authenticationInfo?.newCounter ?? 
+                          verification.authenticationInfo?.counter ?? 
+                          (credential.counter + 1);
+        
         prepare('UPDATE credentials SET counter = ? WHERE id = ?').run(
-            verification.authenticationInfo.newCounter,
+            newCounter,
             credential.id
         );
 

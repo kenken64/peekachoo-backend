@@ -73,6 +73,39 @@ async function initDatabase() {
         )
     `);
 
+    // Create pokemon table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS pokemon (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            height INTEGER,
+            weight INTEGER,
+            base_experience INTEGER,
+            sprite_url TEXT,
+            types TEXT,
+            abilities TEXT,
+            stats TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    // Create games table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS games (
+            id TEXT PRIMARY KEY,
+            creator_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            levels TEXT NOT NULL,
+            is_published INTEGER DEFAULT 0,
+            play_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+
     saveDatabase();
     console.log('SQLite database initialized');
     
