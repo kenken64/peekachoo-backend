@@ -24,95 +24,208 @@ async function fetchPokemonDetails(url) {
 // Sync Pokemon from API to database
 exports.syncPokemon = async (req, res) => {
     try {
-        const limit = parseInt(req.body.limit) || parseInt(req.query.limit) || 50;
-        const offset = parseInt(req.body.offset) || parseInt(req.query.offset) || 0;
+        // Check if user wants to sync all Pokemon
+        const syncAll = req.body.syncAll || req.query.syncAll === 'true';
 
-        console.log(`Fetching ${limit} Pokemon from offset ${offset}...`);
-        
-        // Get list of Pokemon
-        const listData = await fetchPokemonList(limit, offset);
-        const pokemonList = listData.results;
+        let limit = parseInt(req.body.limit) || parseInt(req.query.limit) || 50;
+        let offset = parseInt(req.body.offset) || parseInt(req.query.offset) || 0;
 
-        let inserted = 0;
-        let updated = 0;
+        let totalInserted = 0;
+        let totalUpdated = 0;
+        let totalCount = 0;
 
-        // Fetch details for each Pokemon (with rate limiting)
-        for (const item of pokemonList) {
-            try {
-                const pokemon = await fetchPokemonDetails(item.url);
-                
-                // Extract sprite URL
-                const spriteUrl = pokemon.sprites?.front_default || 
-                    pokemon.sprites?.other?.['official-artwork']?.front_default || null;
+        if (syncAll) {
+            // First, fetch to get the total count
+            console.log('Fetching total Pokemon count...');
+            const initialData = await fetchPokemonList(1, 0);
+            totalCount = initialData.count;
+            console.log(`Total Pokemon available: ${totalCount}`);
+            console.log('Starting full sync...');
 
-                // Extract types
-                const types = pokemon.types.map(t => t.type.name);
+            // Sync in batches of 100
+            const batchSize = 100;
+            for (let currentOffset = 0; currentOffset < totalCount; currentOffset += batchSize) {
+                const currentLimit = Math.min(batchSize, totalCount - currentOffset);
+                console.log(`Syncing batch: ${currentOffset + 1}-${currentOffset + currentLimit} of ${totalCount}...`);
 
-                // Extract abilities
-                const abilities = pokemon.abilities.map(a => a.ability.name);
+                const listData = await fetchPokemonList(currentLimit, currentOffset);
+                const pokemonList = listData.results;
 
-                // Extract stats
-                const stats = pokemon.stats.map(s => ({
-                    name: s.stat.name,
-                    base_stat: s.base_stat
-                }));
+                // Fetch details for each Pokemon in this batch
+                for (const item of pokemonList) {
+                    try {
+                        const pokemon = await fetchPokemonDetails(item.url);
 
-                // Check if Pokemon exists
-                const existing = prepare('SELECT id FROM pokemon WHERE id = ?').get(pokemon.id);
+                        // Extract sprite URL
+                        const spriteUrl = pokemon.sprites?.front_default ||
+                            pokemon.sprites?.other?.['official-artwork']?.front_default || null;
 
-                if (existing) {
-                    // Update existing
-                    prepare(`
-                        UPDATE pokemon SET 
-                            name = ?, height = ?, weight = ?, base_experience = ?,
-                            sprite_url = ?, types = ?, abilities = ?, stats = ?,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                    `).run(
-                        pokemon.name,
-                        pokemon.height,
-                        pokemon.weight,
-                        pokemon.base_experience,
-                        spriteUrl,
-                        JSON.stringify(types),
-                        JSON.stringify(abilities),
-                        JSON.stringify(stats),
-                        pokemon.id
-                    );
-                    updated++;
-                } else {
-                    // Insert new
-                    prepare(`
-                        INSERT INTO pokemon (id, name, height, weight, base_experience, sprite_url, types, abilities, stats)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `).run(
-                        pokemon.id,
-                        pokemon.name,
-                        pokemon.height,
-                        pokemon.weight,
-                        pokemon.base_experience,
-                        spriteUrl,
-                        JSON.stringify(types),
-                        JSON.stringify(abilities),
-                        JSON.stringify(stats)
-                    );
-                    inserted++;
+                        // Extract types
+                        const types = pokemon.types.map(t => t.type.name);
+
+                        // Extract abilities
+                        const abilities = pokemon.abilities.map(a => a.ability.name);
+
+                        // Extract stats
+                        const stats = pokemon.stats.map(s => ({
+                            name: s.stat.name,
+                            base_stat: s.base_stat
+                        }));
+
+                        // Check if Pokemon exists
+                        const existing = prepare('SELECT id FROM pokemon WHERE id = ?').get(pokemon.id);
+
+                        if (existing) {
+                            // Update existing
+                            prepare(`
+                                UPDATE pokemon SET
+                                    name = ?, height = ?, weight = ?, base_experience = ?,
+                                    sprite_url = ?, types = ?, abilities = ?, stats = ?,
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                            `).run(
+                                pokemon.name,
+                                pokemon.height,
+                                pokemon.weight,
+                                pokemon.base_experience,
+                                spriteUrl,
+                                JSON.stringify(types),
+                                JSON.stringify(abilities),
+                                JSON.stringify(stats),
+                                pokemon.id
+                            );
+                            totalUpdated++;
+                        } else {
+                            // Insert new
+                            prepare(`
+                                INSERT INTO pokemon (id, name, height, weight, base_experience, sprite_url, types, abilities, stats)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            `).run(
+                                pokemon.id,
+                                pokemon.name,
+                                pokemon.height,
+                                pokemon.weight,
+                                pokemon.base_experience,
+                                spriteUrl,
+                                JSON.stringify(types),
+                                JSON.stringify(abilities),
+                                JSON.stringify(stats)
+                            );
+                            totalInserted++;
+                        }
+
+                        // Small delay to avoid rate limiting
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    } catch (err) {
+                        console.error(`Error fetching ${item.name}:`, err.message);
+                    }
                 }
 
-                // Small delay to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 50));
-            } catch (err) {
-                console.error(`Error fetching ${item.name}:`, err.message);
+                // Save after each batch
+                saveDatabase();
+                console.log(`Batch complete. Progress: ${totalInserted + totalUpdated}/${totalCount}`);
             }
+
+            console.log('Full sync complete!');
+            res.json({
+                success: true,
+                message: `Successfully synced all ${totalInserted + totalUpdated} Pokemon`,
+                data: {
+                    inserted: totalInserted,
+                    updated: totalUpdated,
+                    total: totalInserted + totalUpdated,
+                    totalAvailable: totalCount
+                }
+            });
+        } else {
+            // Original single-batch sync
+            console.log(`Fetching ${limit} Pokemon from offset ${offset}...`);
+
+            // Get list of Pokemon
+            const listData = await fetchPokemonList(limit, offset);
+            const pokemonList = listData.results;
+
+            let inserted = 0;
+            let updated = 0;
+
+            // Fetch details for each Pokemon (with rate limiting)
+            for (const item of pokemonList) {
+                try {
+                    const pokemon = await fetchPokemonDetails(item.url);
+
+                    // Extract sprite URL
+                    const spriteUrl = pokemon.sprites?.front_default ||
+                        pokemon.sprites?.other?.['official-artwork']?.front_default || null;
+
+                    // Extract types
+                    const types = pokemon.types.map(t => t.type.name);
+
+                    // Extract abilities
+                    const abilities = pokemon.abilities.map(a => a.ability.name);
+
+                    // Extract stats
+                    const stats = pokemon.stats.map(s => ({
+                        name: s.stat.name,
+                        base_stat: s.base_stat
+                    }));
+
+                    // Check if Pokemon exists
+                    const existing = prepare('SELECT id FROM pokemon WHERE id = ?').get(pokemon.id);
+
+                    if (existing) {
+                        // Update existing
+                        prepare(`
+                            UPDATE pokemon SET
+                                name = ?, height = ?, weight = ?, base_experience = ?,
+                                sprite_url = ?, types = ?, abilities = ?, stats = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        `).run(
+                            pokemon.name,
+                            pokemon.height,
+                            pokemon.weight,
+                            pokemon.base_experience,
+                            spriteUrl,
+                            JSON.stringify(types),
+                            JSON.stringify(abilities),
+                            JSON.stringify(stats),
+                            pokemon.id
+                        );
+                        updated++;
+                    } else {
+                        // Insert new
+                        prepare(`
+                            INSERT INTO pokemon (id, name, height, weight, base_experience, sprite_url, types, abilities, stats)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `).run(
+                            pokemon.id,
+                            pokemon.name,
+                            pokemon.height,
+                            pokemon.weight,
+                            pokemon.base_experience,
+                            spriteUrl,
+                            JSON.stringify(types),
+                            JSON.stringify(abilities),
+                            JSON.stringify(stats)
+                        );
+                        inserted++;
+                    }
+
+                    // Small delay to avoid rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                } catch (err) {
+                    console.error(`Error fetching ${item.name}:`, err.message);
+                }
+            }
+
+            saveDatabase();
+
+            res.json({
+                success: true,
+                message: `Synced ${inserted + updated} Pokemon`,
+                data: { inserted, updated, total: inserted + updated }
+            });
         }
-
-        saveDatabase();
-
-        res.json({
-            success: true,
-            message: `Synced ${inserted + updated} Pokemon`,
-            data: { inserted, updated, total: inserted + updated }
-        });
     } catch (error) {
         console.error('Pokemon sync error:', error);
         res.status(500).json({ error: error.message });

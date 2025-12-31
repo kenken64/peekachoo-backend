@@ -3,6 +3,7 @@ const peekachooRoutes = require('./peekachooRoutes');
 const authRoutes = require('./authRoutes');
 const pokemonRoutes = require('./pokemonRoutes');
 const gameRoutes = require('./gameRoutes');
+const quizRoutes = require('./quizRoutes');
 
 const router = express.Router();
 
@@ -15,7 +16,8 @@ router.get('/', (req, res) => {
             auth: '/api/auth',
             peekachoos: '/api/peekachoos',
             pokemon: '/api/pokemon',
-            games: '/api/games'
+            games: '/api/games',
+            quiz: '/api/quiz'
         }
     });
 });
@@ -25,5 +27,6 @@ router.use('/auth', authRoutes);
 router.use('/peekachoos', peekachooRoutes);
 router.use('/pokemon', pokemonRoutes);
 router.use('/games', gameRoutes);
+router.use('/quiz', quizRoutes);
 
 module.exports = router;
