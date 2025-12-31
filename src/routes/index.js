@@ -4,6 +4,9 @@ const authRoutes = require('./authRoutes');
 const pokemonRoutes = require('./pokemonRoutes');
 const gameRoutes = require('./gameRoutes');
 const quizRoutes = require('./quizRoutes');
+const leaderboardRoutes = require('./leaderboardRoutes');
+const statsRoutes = require('./statsRoutes');
+const achievementsRoutes = require('./achievementsRoutes');
 
 const router = express.Router();
 
@@ -17,7 +20,10 @@ router.get('/', (req, res) => {
             peekachoos: '/api/peekachoos',
             pokemon: '/api/pokemon',
             games: '/api/games',
-            quiz: '/api/quiz'
+            quiz: '/api/quiz',
+            leaderboard: '/api/leaderboard',
+            stats: '/api/stats',
+            achievements: '/api/achievements'
         }
     });
 });
@@ -28,5 +34,8 @@ router.use('/peekachoos', peekachooRoutes);
 router.use('/pokemon', pokemonRoutes);
 router.use('/games', gameRoutes);
 router.use('/quiz', quizRoutes);
+router.use('/leaderboard', leaderboardRoutes);
+router.use('/stats', statsRoutes);
+router.use('/achievements', achievementsRoutes);
 
 module.exports = router;
