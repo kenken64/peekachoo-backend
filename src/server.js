@@ -1,3 +1,9 @@
+// Polyfill for Web Crypto API (required by @simplewebauthn/server)
+const { webcrypto } = require('crypto');
+if (!globalThis.crypto) {
+    globalThis.crypto = webcrypto;
+}
+
 const app = require('./app');
 const { port } = require('./config/config');
 const { initDatabase } = require('./config/sqlite');
