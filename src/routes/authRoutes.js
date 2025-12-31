@@ -1,8 +1,19 @@
 const express = require('express');
 const authController = require('../controllers/authController');
 const { authMiddleware } = require('../middlewares/authMiddleware');
+const { rpName, rpID, origin } = require('../config/config');
 
 const router = express.Router();
+
+// Debug endpoint to check WebAuthn configuration
+router.get('/config', (req, res) => {
+    res.json({
+        rpName,
+        rpID,
+        origin,
+        nodeEnv: process.env.NODE_ENV
+    });
+});
 
 // Check if username exists
 router.get('/check-username/:username', authController.checkUsername);
