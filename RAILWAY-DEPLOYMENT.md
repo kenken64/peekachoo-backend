@@ -1,8 +1,18 @@
 # Peekachoo Backend - Railway Deployment Guide
 
+## Deployment Method
+
+This backend uses **Docker** for deployment via the included `Dockerfile`.
+
+Railway will automatically:
+- Detect the Dockerfile
+- Build the Docker image
+- Pass environment variables as build arguments
+- Deploy the container
+
 ## Required Environment Variables
 
-Set these in Railway dashboard for your backend service:
+Set these in Railway dashboard for your backend service (they will be passed to Docker):
 
 ```bash
 # Production mode
@@ -86,7 +96,13 @@ Unexpected registration response origin, expected "http://localhost:3001"
 
 ### Database Not Persisting
 
-**Solution:** Add a Railway volume mounted at `./data`
+**Solution:**
+1. Go to Railway dashboard → Your backend service
+2. Click **Settings** tab
+3. Scroll to **Volumes**
+4. Click **+ Add Volume**
+5. Set mount path: `/app/data`
+6. This ensures SQLite database persists across deployments
 
 ## Testing
 
