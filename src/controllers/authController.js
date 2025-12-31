@@ -145,13 +145,20 @@ exports.completeRegistration = async (req, res) => {
         }
 
         const { registrationInfo } = verification;
-        
+
         // Handle both old and new API versions
-        const credentialId = registrationInfo.credential?.id || registrationInfo.credentialID;
+        const credentialIdRaw = registrationInfo.credential?.id || registrationInfo.credentialID;
         const credentialPublicKey = registrationInfo.credential?.publicKey || registrationInfo.credentialPublicKey;
         const counter = registrationInfo.credential?.counter ?? registrationInfo.counter ?? 0;
         const credentialDeviceType = registrationInfo.credentialDeviceType || 'singleDevice';
         const credentialBackedUp = registrationInfo.credentialBackedUp || false;
+
+        // Convert credentialId to base64 string if it's a Uint8Array/Buffer
+        const credentialId = typeof credentialIdRaw === 'string'
+            ? credentialIdRaw
+            : Buffer.from(credentialIdRaw).toString('base64url');
+
+        console.log('[Auth] Storing credential:', { credentialId, userId, counter });
 
         // Store credential - store public key as base64
         prepare(`
@@ -166,6 +173,8 @@ exports.completeRegistration = async (req, res) => {
             credentialBackedUp ? 1 : 0,
             JSON.stringify(response.response.transports || [])
         );
+
+        console.log('[Auth] Credential stored successfully');
 
         // Delete challenge
         prepare('DELETE FROM challenges WHERE id = ?').run(challengeId);
@@ -260,11 +269,24 @@ exports.completeAuthentication = async (req, res) => {
             return res.status(400).json({ error: 'Challenge expired' });
         }
 
-        // Get credential
-        const credential = prepare('SELECT * FROM credentials WHERE id = ?').get(response.id);
+        // Get credential - response.id should be base64url encoded
+        console.log('[Auth] Looking up credential:', response.id);
+        let credential = prepare('SELECT * FROM credentials WHERE id = ?').get(response.id);
+
+        // If not found, try alternate encodings (base64 vs base64url)
         if (!credential) {
+            // Try converting from base64url to base64 or vice versa
+            const altId = response.id.replace(/-/g, '+').replace(/_/g, '/');
+            credential = prepare('SELECT * FROM credentials WHERE id = ?').get(altId);
+        }
+
+        if (!credential) {
+            console.log('[Auth] Credential not found. Available credentials:',
+                prepare('SELECT id FROM credentials').all());
             return res.status(400).json({ error: 'Credential not found' });
         }
+
+        console.log('[Auth] Credential found for user:', credential.user_id);
 
         // IMPORTANT: Verify that the credential belongs to the user who initiated login
         // This prevents using a different user's passkey when logging in
