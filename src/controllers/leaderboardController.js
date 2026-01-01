@@ -526,6 +526,11 @@ async function startSession(req, res, next) {
 
         const sessionId = scoreService.startSession(userId, gameId || null);
 
+        // Track player joining the game for active player count
+        if (gameId) {
+            websocketService.playerJoinedGame(gameId, userId, sessionId);
+        }
+
         res.status(201).json({
             success: true,
             data: { sessionId },
@@ -543,6 +548,9 @@ async function endSession(req, res, next) {
     try {
         const { sessionId } = req.params;
 
+        // Get session info before ending to track player leaving
+        const sessionInfo = prepare(`SELECT game_id FROM game_sessions WHERE id = ?`).get(sessionId);
+
         const session = scoreService.endSession(sessionId);
 
         if (!session) {
@@ -550,6 +558,11 @@ async function endSession(req, res, next) {
                 success: false,
                 error: { code: 'NOT_FOUND', message: 'Session not found' },
             });
+        }
+
+        // Track player leaving the game
+        if (sessionInfo?.game_id) {
+            websocketService.playerLeftGame(sessionInfo.game_id, sessionId);
         }
 
         res.json({

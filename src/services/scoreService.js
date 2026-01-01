@@ -97,6 +97,8 @@ function calculateScoreBreakdown(data) {
  * Submit a score and update all related stats
  */
 async function submitScore(userId, scoreData) {
+    console.log('[ScoreService] submitScore called with:', { userId, scoreData });
+
     const {
         gameId,
         sessionId,
@@ -140,21 +142,28 @@ async function submitScore(userId, scoreData) {
 
     // Insert score record
     const scoreId = uuidv4();
-    prepare(`
-        INSERT INTO player_scores (
-            id, user_id, game_id, session_id, level,
-            territory_score, time_bonus, life_bonus, quiz_bonus, streak_bonus,
-            level_multiplier, total_score,
-            territory_percentage, time_taken_seconds, lives_remaining, quiz_attempts,
-            pokemon_id, pokemon_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-        scoreId, userId, gameId, sessionId, level,
-        breakdown.territoryScore, breakdown.timeBonus, breakdown.lifeBonus,
-        breakdown.quizBonus, breakdown.streakBonus, breakdown.levelMultiplier,
-        breakdown.totalScore, territoryPercentage, timeTakenSeconds,
-        livesRemaining, quizAttempts, pokemonId, pokemonName
-    );
+    console.log('[ScoreService] Inserting score record:', { scoreId, level, totalScore: breakdown.totalScore });
+    try {
+        prepare(`
+            INSERT INTO player_scores (
+                id, user_id, game_id, session_id, level,
+                territory_score, time_bonus, life_bonus, quiz_bonus, streak_bonus,
+                level_multiplier, total_score,
+                territory_percentage, time_taken_seconds, lives_remaining, quiz_attempts,
+                pokemon_id, pokemon_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            scoreId, userId, gameId, sessionId, level,
+            breakdown.territoryScore, breakdown.timeBonus, breakdown.lifeBonus,
+            breakdown.quizBonus, breakdown.streakBonus, breakdown.levelMultiplier,
+            breakdown.totalScore, territoryPercentage, timeTakenSeconds,
+            livesRemaining, quizAttempts, pokemonId, pokemonName
+        );
+        console.log('[ScoreService] Score record inserted successfully');
+    } catch (insertError) {
+        console.error('[ScoreService] Failed to insert score:', insertError);
+        throw insertError;
+    }
 
     // Update player stats
     const newTotalScore = (playerStats.total_score_all_time || 0) + breakdown.totalScore;
@@ -442,12 +451,23 @@ function startSession(userId, gameId = null) {
         VALUES (?, ?, ?)
     `).run(sessionId, userId, gameId);
 
-    // Increment games played count
-    prepare(`
-        UPDATE player_stats SET
-            total_games_played = COALESCE(total_games_played, 0) + 1
-        WHERE user_id = ?
-    `).run(userId);
+    // Ensure player_stats exists for this user
+    const existingStats = prepare(`SELECT 1 FROM player_stats WHERE user_id = ?`).get(userId);
+    if (!existingStats) {
+        prepare(`
+            INSERT INTO player_stats (user_id, first_played_at, last_played_at, total_games_played)
+            VALUES (?, datetime('now'), datetime('now'), 1)
+        `).run(userId);
+    } else {
+        // Increment games played count
+        prepare(`
+            UPDATE player_stats SET
+                total_games_played = COALESCE(total_games_played, 0) + 1
+            WHERE user_id = ?
+        `).run(userId);
+    }
+
+    console.log('[ScoreService] Session started:', { sessionId, userId, gameId });
 
     return sessionId;
 }
@@ -464,12 +484,26 @@ function endSession(sessionId) {
     const session = prepare(`SELECT * FROM game_sessions WHERE id = ?`).get(sessionId);
 
     if (session) {
-        // Check if this is a new best single game score
+        // Calculate play time in seconds
+        const startedAt = new Date(session.started_at);
+        const endedAt = new Date(session.ended_at);
+        const playTimeSeconds = Math.floor((endedAt - startedAt) / 1000);
+
+        // Update player stats: best single game score and total play time
         prepare(`
             UPDATE player_stats SET
-                best_single_game_score = MAX(COALESCE(best_single_game_score, 0), ?)
+                best_single_game_score = MAX(COALESCE(best_single_game_score, 0), ?),
+                total_play_time_seconds = COALESCE(total_play_time_seconds, 0) + ?,
+                last_played_at = datetime('now')
             WHERE user_id = ?
-        `).run(session.total_score, session.user_id);
+        `).run(session.total_score, playTimeSeconds, session.user_id);
+
+        console.log('[ScoreService] Session ended:', {
+            sessionId,
+            playTimeSeconds,
+            totalScore: session.total_score,
+            levelsCompleted: session.levels_completed
+        });
     }
 
     return session;

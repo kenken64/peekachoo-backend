@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { prepare, saveDatabase } = require('../config/sqlite');
+const websocketService = require('../services/websocketService');
 
 // Create a new game
 exports.createGame = async (req, res) => {
@@ -51,8 +52,8 @@ exports.getMyGames = async (req, res) => {
         const userId = req.user.id;
 
         const games = prepare(`
-            SELECT * FROM games 
-            WHERE creator_id = ? 
+            SELECT * FROM games
+            WHERE creator_id = ?
             ORDER BY created_at DESC
         `).all(userId);
 
@@ -63,6 +64,7 @@ exports.getMyGames = async (req, res) => {
             levels: JSON.parse(g.levels || '[]'),
             isPublished: g.is_published === 1,
             playCount: g.play_count,
+            activePlayerCount: websocketService.getActivePlayerCount(g.id, userId),
             createdAt: g.created_at,
             updatedAt: g.updated_at
         }));
@@ -116,6 +118,7 @@ exports.getPublishedGames = async (req, res) => {
 exports.getGameById = async (req, res) => {
     try {
         const { id } = req.params;
+        const userId = req.user.id;
 
         const game = prepare(`
             SELECT g.*, u.username as creator_name
@@ -129,9 +132,11 @@ exports.getGameById = async (req, res) => {
         }
 
         // Only allow access if published or owned by user
-        if (game.is_published !== 1 && game.creator_id !== req.user.id) {
+        if (game.is_published !== 1 && game.creator_id !== userId) {
             return res.status(403).json({ error: 'Access denied' });
         }
+
+        const isOwner = game.creator_id === userId;
 
         res.json({
             success: true,
@@ -143,6 +148,8 @@ exports.getGameById = async (req, res) => {
                 isPublished: game.is_published === 1,
                 creatorName: game.creator_name,
                 playCount: game.play_count,
+                // Only include active player count for the owner
+                ...(isOwner ? { activePlayerCount: websocketService.getActivePlayerCount(id, userId) } : {}),
                 createdAt: game.created_at,
                 updatedAt: game.updated_at
             }
@@ -207,7 +214,24 @@ exports.togglePublish = async (req, res) => {
             return res.status(403).json({ error: 'Not authorized' });
         }
 
-        const newStatus = game.is_published === 1 ? 0 : 1;
+        const isCurrentlyPublished = game.is_published === 1;
+        const newStatus = isCurrentlyPublished ? 0 : 1;
+
+        // If trying to unpublish, check for active players (excluding the owner)
+        if (isCurrentlyPublished) {
+            const activePlayerCount = websocketService.getActivePlayerCount(id, userId);
+            if (activePlayerCount > 0) {
+                return res.status(409).json({
+                    success: false,
+                    error: {
+                        code: 'ACTIVE_PLAYERS',
+                        message: `Cannot unpublish: ${activePlayerCount} player(s) currently playing this game`,
+                        activePlayerCount
+                    }
+                });
+            }
+        }
+
         prepare('UPDATE games SET is_published = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newStatus, id);
 
         res.json({
@@ -232,6 +256,17 @@ exports.deleteGame = async (req, res) => {
         }
         if (game.creator_id !== userId) {
             return res.status(403).json({ error: 'Not authorized' });
+        }
+
+        // Prevent deletion of published games
+        if (game.is_published === 1) {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'GAME_PUBLISHED',
+                    message: 'Cannot delete a published game. Please unpublish it first.'
+                }
+            });
         }
 
         prepare('DELETE FROM games WHERE id = ?').run(id);

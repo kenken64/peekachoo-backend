@@ -9,6 +9,9 @@ async function getMyStats(req, res, next) {
     try {
         const userId = req.user.id;
 
+        // Get total Pokemon count from database
+        const totalPokemonCount = prepare(`SELECT COUNT(*) as count FROM pokemon`).get()?.count || 151;
+
         const user = prepare(`SELECT * FROM users WHERE id = ?`).get(userId);
         const stats = prepare(`SELECT * FROM player_stats WHERE user_id = ?`).get(userId);
 
@@ -21,7 +24,7 @@ async function getMyStats(req, res, next) {
                         displayName: user.display_name || user.username,
                         createdAt: user.created_at,
                     },
-                    stats: getEmptyStats(),
+                    stats: getEmptyStats(totalPokemonCount),
                     rankings: {
                         global: { rank: 0, total: 0, percentile: 0 },
                         weekly: { rank: 0, total: 0 },
@@ -114,7 +117,7 @@ async function getMyStats(req, res, next) {
                         : 0,
                     totalPlayTimeSeconds: stats.total_play_time_seconds || 0,
                     uniquePokemonRevealed: stats.unique_pokemon_revealed || 0,
-                    totalPokemon: 151,
+                    totalPokemon: totalPokemonCount,
                     firstPlayedAt: stats.first_played_at,
                     lastPlayedAt: stats.last_played_at,
                 },
@@ -145,6 +148,9 @@ async function getPlayerStats(req, res, next) {
     try {
         const { userId } = req.params;
 
+        // Get total Pokemon count from database
+        const totalPokemonCount = prepare(`SELECT COUNT(*) as count FROM pokemon`).get()?.count || 151;
+
         const user = prepare(`SELECT * FROM users WHERE id = ?`).get(userId);
 
         if (!user) {
@@ -165,7 +171,7 @@ async function getPlayerStats(req, res, next) {
                         displayName: user.display_name || user.username,
                         createdAt: user.created_at,
                     },
-                    stats: getEmptyStats(),
+                    stats: getEmptyStats(totalPokemonCount),
                     rankings: {
                         global: { rank: 0, total: 0, percentile: 0 },
                     },
@@ -196,7 +202,7 @@ async function getPlayerStats(req, res, next) {
                     totalScoreAllTime: stats.total_score_all_time || 0,
                     bestStreak: stats.best_streak || 0,
                     uniquePokemonRevealed: stats.unique_pokemon_revealed || 0,
-                    totalPokemon: 151,
+                    totalPokemon: totalPokemonCount,
                     lastPlayedAt: stats.last_played_at,
                 },
                 rankings: {
@@ -304,18 +310,29 @@ async function getGameHistory(req, res, next) {
 async function getCollection(req, res, next) {
     try {
         const userId = req.user.id;
-        const { filter = 'all', sortBy = 'id', order = 'asc' } = req.query;
+        const {
+            filter = 'all',
+            sortBy = 'id',
+            order = 'asc',
+            limit = 30,
+            offset = 0
+        } = req.query;
+
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 30));
+        const offsetNum = Math.max(0, parseInt(offset) || 0);
+
+        // Get total Pokemon count from database
+        const totalCount = prepare(`SELECT COUNT(*) as count FROM pokemon`).get()?.count || 0;
 
         // Get collection summary
         const revealed = prepare(`
             SELECT COUNT(*) as count FROM player_pokemon_collection WHERE user_id = ?
         `).get(userId)?.count || 0;
 
-        const total = 151;
-        const percentage = (revealed / total) * 100;
+        const percentage = totalCount > 0 ? (revealed / totalCount) * 100 : 0;
 
-        // Get all Pokemon with collection status
-        let query = `
+        // Build base query for Pokemon with collection status
+        let baseQuery = `
             SELECT
                 p.id,
                 p.name,
@@ -330,10 +347,11 @@ async function getCollection(req, res, next) {
             LEFT JOIN player_pokemon_collection ppc ON ppc.pokemon_id = p.id AND ppc.user_id = ?
         `;
 
+        let whereClause = '';
         if (filter === 'revealed') {
-            query += ' WHERE ppc.user_id IS NOT NULL';
+            whereClause = ' WHERE ppc.user_id IS NOT NULL';
         } else if (filter === 'hidden') {
-            query += ' WHERE ppc.user_id IS NULL';
+            whereClause = ' WHERE ppc.user_id IS NULL';
         }
 
         // Add ordering
@@ -342,9 +360,11 @@ async function getCollection(req, res, next) {
         if (sortBy === 'revealed_at') orderColumn = 'ppc.first_revealed_at';
         if (sortBy === 'times_revealed') orderColumn = 'ppc.times_revealed';
 
-        query += ` ORDER BY ${orderColumn} ${order.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}`;
+        const orderClause = ` ORDER BY ${orderColumn} ${order.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}`;
 
-        const pokemon = prepare(query).all(userId);
+        // Get paginated Pokemon
+        const query = baseQuery + whereClause + orderClause + ` LIMIT ? OFFSET ?`;
+        const pokemon = prepare(query).all(userId, limitNum, offsetNum);
 
         // Get recently revealed
         const recentlyRevealed = prepare(`
@@ -365,7 +385,7 @@ async function getCollection(req, res, next) {
             data: {
                 summary: {
                     revealed,
-                    total,
+                    total: totalCount,
                     percentage: Math.round(percentage * 10) / 10,
                 },
                 pokemon: pokemon.map(p => ({
@@ -373,6 +393,12 @@ async function getCollection(req, res, next) {
                     types: p.types ? JSON.parse(p.types) : [],
                     isRevealed: !!p.isRevealed,
                 })),
+                pagination: {
+                    total: totalCount,
+                    limit: limitNum,
+                    offset: offsetNum,
+                    hasMore: offsetNum + pokemon.length < totalCount,
+                },
                 recentlyRevealed: recentlyRevealed.map(p => ({
                     ...p,
                 })),
@@ -386,7 +412,7 @@ async function getCollection(req, res, next) {
 /**
  * Get empty stats object
  */
-function getEmptyStats() {
+function getEmptyStats(totalPokemonCount = 151) {
     return {
         highestLevelReached: 0,
         totalLevelsCompleted: 0,
@@ -405,7 +431,7 @@ function getEmptyStats() {
         quizAccuracy: 0,
         totalPlayTimeSeconds: 0,
         uniquePokemonRevealed: 0,
-        totalPokemon: 151,
+        totalPokemon: totalPokemonCount,
         firstPlayedAt: null,
         lastPlayedAt: null,
     };

@@ -11,6 +11,7 @@ class WebSocketService {
         this.wss = null;
         this.clients = new Map(); // Map of userId -> Set of WebSocket connections
         this.heartbeatInterval = null;
+        this.activeGamePlayers = new Map(); // Map of gameId -> Set of { userId, sessionId }
     }
 
     /**
@@ -435,6 +436,119 @@ class WebSocketService {
      */
     getOnlineCount() {
         return this.clients.size;
+    }
+
+    // ============================================
+    // Active Game Player Tracking
+    // ============================================
+
+    /**
+     * Track player starting a game session
+     * @param {string} gameId - The game being played
+     * @param {string} userId - The player's user ID
+     * @param {string} sessionId - The game session ID
+     */
+    playerJoinedGame(gameId, userId, sessionId) {
+        if (!gameId) return;
+
+        if (!this.activeGamePlayers.has(gameId)) {
+            this.activeGamePlayers.set(gameId, new Map());
+        }
+
+        const gamePlayers = this.activeGamePlayers.get(gameId);
+        gamePlayers.set(sessionId, { userId, sessionId, joinedAt: Date.now() });
+
+        console.log(`[WebSocket] Player ${userId} joined game ${gameId} (session: ${sessionId}). Active players: ${gamePlayers.size}`);
+
+        // Notify game owner about new player
+        this.broadcastToChannel(`game:${gameId}`, {
+            type: 'player_joined_game',
+            data: {
+                gameId,
+                userId,
+                activePlayerCount: gamePlayers.size
+            },
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * Track player leaving a game session
+     * @param {string} gameId - The game being played
+     * @param {string} sessionId - The game session ID
+     */
+    playerLeftGame(gameId, sessionId) {
+        if (!gameId) return;
+
+        const gamePlayers = this.activeGamePlayers.get(gameId);
+        if (!gamePlayers) return;
+
+        const player = gamePlayers.get(sessionId);
+        if (player) {
+            gamePlayers.delete(sessionId);
+            console.log(`[WebSocket] Player ${player.userId} left game ${gameId} (session: ${sessionId}). Active players: ${gamePlayers.size}`);
+
+            // Clean up empty game entries
+            if (gamePlayers.size === 0) {
+                this.activeGamePlayers.delete(gameId);
+            }
+
+            // Notify game owner about player leaving
+            this.broadcastToChannel(`game:${gameId}`, {
+                type: 'player_left_game',
+                data: {
+                    gameId,
+                    userId: player.userId,
+                    activePlayerCount: gamePlayers.size
+                },
+                timestamp: Date.now()
+            });
+        }
+    }
+
+    /**
+     * Get count of active players on a game
+     * @param {string} gameId - The game ID
+     * @param {string} excludeUserId - Optional user ID to exclude from count (e.g., the game owner)
+     * @returns {number} Number of active players
+     */
+    getActivePlayerCount(gameId, excludeUserId = null) {
+        const gamePlayers = this.activeGamePlayers.get(gameId);
+        if (!gamePlayers) return 0;
+
+        if (excludeUserId) {
+            let count = 0;
+            for (const player of gamePlayers.values()) {
+                if (player.userId !== excludeUserId) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        return gamePlayers.size;
+    }
+
+    /**
+     * Get list of active players on a game
+     * @param {string} gameId - The game ID
+     * @returns {Array} Array of active player info
+     */
+    getActivePlayers(gameId) {
+        const gamePlayers = this.activeGamePlayers.get(gameId);
+        if (!gamePlayers) return [];
+
+        return Array.from(gamePlayers.values());
+    }
+
+    /**
+     * Check if other players (not owner) are playing the game
+     * @param {string} gameId - The game ID
+     * @param {string} ownerId - The game owner's user ID
+     * @returns {boolean} True if other players are active
+     */
+    hasOtherActivePlayers(gameId, ownerId) {
+        return this.getActivePlayerCount(gameId, ownerId) > 0;
     }
 
     /**

@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { prepare } = require('../config/sqlite');
 
 /**
  * Generate a quiz question for a Pokemon using OpenAI Vision API
@@ -20,7 +21,7 @@ exports.generateQuiz = async (req, res) => {
             });
         }
 
-        // Generate 3 wrong answers from the provided list or common Pokemon names
+        // Generate 3 wrong answers, fetching from database if needed
         const wrongAnswers = generateWrongAnswers(pokemonName, allPokemonNames || []);
 
         // Create multiple choice options (mix correct and wrong answers)
@@ -85,23 +86,51 @@ exports.generateQuiz = async (req, res) => {
 
 /**
  * Generate wrong answer choices
+ * Fetches from database if not enough Pokemon names provided
  */
 function generateWrongAnswers(correctAnswer, allNames) {
-    const commonPokemon = [
-        'pikachu', 'charizard', 'bulbasaur', 'squirtle', 'mewtwo',
-        'eevee', 'snorlax', 'dragonite', 'gengar', 'lucario',
-        'garchomp', 'alakazam', 'gyarados', 'lapras', 'arcanine',
-        'machamp', 'golem', 'rapidash', 'meowth', 'psyduck',
-        'jigglypuff', 'wigglytuff', 'venusaur', 'blastoise', 'butterfree'
-    ];
-
-    // Use provided names or common Pokemon
-    const namePool = allNames.length > 0 ? allNames : commonPokemon;
-
-    // Filter out the correct answer
-    const availableNames = namePool.filter(
+    // Filter out the correct answer from provided names
+    let availableNames = allNames.filter(
         name => name.toLowerCase() !== correctAnswer.toLowerCase()
     );
+
+    // If we don't have enough names (need at least 3 wrong answers), fetch from database
+    if (availableNames.length < 3) {
+        try {
+            // Get random Pokemon from database, excluding the correct answer and already available names
+            const excludeNames = [correctAnswer.toLowerCase(), ...availableNames.map(n => n.toLowerCase())];
+            const placeholders = excludeNames.map(() => '?').join(',');
+
+            const dbPokemon = prepare(`
+                SELECT name FROM pokemon
+                WHERE LOWER(name) NOT IN (${placeholders})
+                ORDER BY RANDOM()
+                LIMIT ?
+            `).all(...excludeNames, 3 - availableNames.length);
+
+            // Add database Pokemon names to available names
+            const dbNames = dbPokemon.map(p => p.name);
+            availableNames = [...availableNames, ...dbNames];
+
+            console.log('[Quiz] Fetched additional Pokemon from DB:', dbNames);
+        } catch (dbError) {
+            console.error('[Quiz] Failed to fetch Pokemon from database:', dbError.message);
+
+            // Fallback to hardcoded list if database fails
+            const fallbackPokemon = [
+                'pikachu', 'charizard', 'bulbasaur', 'squirtle', 'mewtwo',
+                'eevee', 'snorlax', 'dragonite', 'gengar', 'lucario',
+                'alakazam', 'gyarados', 'lapras', 'arcanine', 'machamp'
+            ];
+
+            const fallbackFiltered = fallbackPokemon.filter(
+                name => name.toLowerCase() !== correctAnswer.toLowerCase() &&
+                       !availableNames.some(n => n.toLowerCase() === name.toLowerCase())
+            );
+
+            availableNames = [...availableNames, ...shuffleArray(fallbackFiltered).slice(0, 3 - availableNames.length)];
+        }
+    }
 
     // Shuffle and pick 3
     const shuffled = shuffleArray(availableNames);
