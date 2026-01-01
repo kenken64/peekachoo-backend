@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { jwtSecret } = require('../config/config');
+const { jwtSecret, adminApiKey } = require('../config/config');
 
 const authMiddleware = (req, res, next) => {
     try {
@@ -48,4 +48,23 @@ const optionalAuth = (req, res, next) => {
     }
 };
 
-module.exports = { authMiddleware, optionalAuth };
+// Admin API key authentication middleware
+const adminApiKeyAuth = (req, res, next) => {
+    try {
+        const apiKey = req.headers['x-api-key'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'No API key provided' });
+        }
+
+        if (apiKey !== adminApiKey) {
+            return res.status(403).json({ error: 'Invalid API key' });
+        }
+
+        next();
+    } catch (error) {
+        return res.status(500).json({ error: 'API key authentication failed' });
+    }
+};
+
+module.exports = { authMiddleware, optionalAuth, adminApiKeyAuth };

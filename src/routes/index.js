@@ -7,6 +7,7 @@ const quizRoutes = require('./quizRoutes');
 const leaderboardRoutes = require('./leaderboardRoutes');
 const statsRoutes = require('./statsRoutes');
 const achievementsRoutes = require('./achievementsRoutes');
+const adminRoutes = require('./adminRoutes');
 
 const router = express.Router();
 
@@ -23,7 +24,8 @@ router.get('/', (req, res) => {
             quiz: '/api/quiz',
             leaderboard: '/api/leaderboard',
             stats: '/api/stats',
-            achievements: '/api/achievements'
+            achievements: '/api/achievements',
+            admin: '/api/admin (requires API key)'
         }
     });
 });
@@ -37,5 +39,6 @@ router.use('/quiz', quizRoutes);
 router.use('/leaderboard', leaderboardRoutes);
 router.use('/stats', statsRoutes);
 router.use('/achievements', achievementsRoutes);
+router.use('/admin', adminRoutes);
 
 module.exports = router;

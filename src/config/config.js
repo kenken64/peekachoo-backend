@@ -7,5 +7,6 @@ module.exports = {
     jwtSecret: process.env.JWT_SECRET || 'peekachoo-super-secret-key-change-in-production',
     rpName: process.env.RP_NAME || 'Peekachoo',
     rpID: process.env.RP_ID || 'localhost',
-    origin: process.env.ORIGIN || 'http://localhost:3001'
+    origin: process.env.ORIGIN || 'http://localhost:3001',
+    adminApiKey: process.env.ADMIN_API_KEY || 'peekachoo-admin-api-key-change-in-production'
 };
