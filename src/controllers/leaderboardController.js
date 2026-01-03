@@ -26,19 +26,20 @@ async function getGlobalLeaderboard(req, res, next) {
         switch (period) {
             case 'daily':
                 periodStart = new Date();
-                periodStart.setHours(0, 0, 0, 0);
+                // Use UTC to match database timestamps
+                periodStart.setUTCHours(0, 0, 0, 0);
                 dateFilter = `AND ps.created_at >= '${periodStart.toISOString()}'`;
                 break;
             case 'weekly':
                 periodStart = new Date();
-                periodStart.setDate(periodStart.getDate() - periodStart.getDay());
-                periodStart.setHours(0, 0, 0, 0);
+                periodStart.setUTCDate(periodStart.getUTCDate() - periodStart.getUTCDay());
+                periodStart.setUTCHours(0, 0, 0, 0);
                 dateFilter = `AND ps.created_at >= '${periodStart.toISOString()}'`;
                 break;
             case 'monthly':
                 periodStart = new Date();
-                periodStart.setDate(1);
-                periodStart.setHours(0, 0, 0, 0);
+                periodStart.setUTCDate(1);
+                periodStart.setUTCHours(0, 0, 0, 0);
                 dateFilter = `AND ps.created_at >= '${periodStart.toISOString()}'`;
                 break;
             default:
