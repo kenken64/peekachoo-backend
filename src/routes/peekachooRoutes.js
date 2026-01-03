@@ -6,8 +6,12 @@ const {
     updatePeekachoo,
     deletePeekachoo
 } = require('../controllers/peekachooController');
+const { authMiddleware } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
+
+// All peekachoo routes require authentication
+router.use(authMiddleware);
 
 router.get('/', getAllPeekachoos);
 router.get('/:id', getPeekachooById);
