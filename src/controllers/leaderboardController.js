@@ -23,24 +23,29 @@ async function getGlobalLeaderboard(req, res, next) {
         let periodStart = null;
         let periodEnd = new Date().toISOString();
 
+        // Helper to format date for SQLite comparison (YYYY-MM-DD HH:MM:SS format)
+        const formatForSQLite = (date) => {
+            return date.toISOString().replace('T', ' ').replace('Z', '').split('.')[0];
+        };
+
         switch (period) {
             case 'daily':
                 periodStart = new Date();
                 // Use UTC to match database timestamps
                 periodStart.setUTCHours(0, 0, 0, 0);
-                dateFilter = `AND ps.created_at >= '${periodStart.toISOString()}'`;
+                dateFilter = `AND ps.created_at >= '${formatForSQLite(periodStart)}'`;
                 break;
             case 'weekly':
                 periodStart = new Date();
                 periodStart.setUTCDate(periodStart.getUTCDate() - periodStart.getUTCDay());
                 periodStart.setUTCHours(0, 0, 0, 0);
-                dateFilter = `AND ps.created_at >= '${periodStart.toISOString()}'`;
+                dateFilter = `AND ps.created_at >= '${formatForSQLite(periodStart)}'`;
                 break;
             case 'monthly':
                 periodStart = new Date();
                 periodStart.setUTCDate(1);
                 periodStart.setUTCHours(0, 0, 0, 0);
-                dateFilter = `AND ps.created_at >= '${periodStart.toISOString()}'`;
+                dateFilter = `AND ps.created_at >= '${formatForSQLite(periodStart)}'`;
                 break;
             default:
                 periodStart = new Date(0);
