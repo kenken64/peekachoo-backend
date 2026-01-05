@@ -158,6 +158,11 @@ function generateWrongAnswers(correctAnswer, allNames, isJP = false, isCN = fals
                 LIMIT 3
             `).all(...excludeNames);
             
+            if (dbPokemon.length < 3) {
+                console.warn('Not enough CN names found in DB, using fallback');
+                return ['皮卡丘', '小火龙', '杰尼龟']; 
+            }
+
             return dbPokemon.map(p => p.name_cn);
         } catch (e) {
             console.error('CN Quiz generation error', e);
