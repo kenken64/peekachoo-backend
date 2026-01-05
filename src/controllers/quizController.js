@@ -16,6 +16,9 @@ exports.generateQuiz = async (req, res) => {
             });
         }
 
+        const cleanPokemonName = pokemonName.trim();
+        console.log(`[Quiz] Generating for: ${cleanPokemonName}, Lang: ${lang}`);
+
         const openaiApiKey = process.env.OPENAI_API_KEY;
         if (!openaiApiKey) {
             return res.status(500).json({
@@ -24,15 +27,15 @@ exports.generateQuiz = async (req, res) => {
         }
 
         // If JP or CN, we need to find the localized name for the correct answer.
-        let targetName = pokemonName;
+        let targetName = cleanPokemonName;
         if (isJP) {
             try {
-                const dbResult = prepare('SELECT name_jp FROM pokemon WHERE LOWER(name) = ?').get(pokemonName.toLowerCase());
+                const dbResult = prepare('SELECT name_jp FROM pokemon WHERE LOWER(name) = ?').get(cleanPokemonName.toLowerCase());
                 if (dbResult && dbResult.name_jp) {
                     targetName = dbResult.name_jp;
                 } else {
                     // Fallback: Try to fetch from PokeAPI if not in DB
-                    const apiName = await fetchPokemonNameFromApi(pokemonName, 'ja');
+                    const apiName = await fetchPokemonNameFromApi(cleanPokemonName, 'ja');
                     if (apiName) targetName = apiName;
                 }
             } catch (e) {
@@ -40,13 +43,25 @@ exports.generateQuiz = async (req, res) => {
             }
         } else if (isCN) {
             try {
-                const dbResult = prepare('SELECT name_cn FROM pokemon WHERE LOWER(name) = ?').get(pokemonName.toLowerCase());
+                const dbResult = prepare('SELECT name_cn FROM pokemon WHERE LOWER(name) = ?').get(cleanPokemonName.toLowerCase());
                 if (dbResult && dbResult.name_cn) {
                     targetName = dbResult.name_cn;
+                    console.log(`[Quiz] Found CN name in DB: ${targetName}`);
                 } else {
+                    console.log(`[Quiz] CN name not in DB for ${cleanPokemonName}, trying API...`);
                     // Fallback: Try to fetch from PokeAPI if not in DB
-                    const apiName = await fetchPokemonNameFromApi(pokemonName, 'zh-Hans');
-                    if (apiName) targetName = apiName;
+                    // Try Simplified Chinese first, then Traditional
+                    let apiName = await fetchPokemonNameFromApi(cleanPokemonName, 'zh-Hans');
+                    if (!apiName) {
+                        apiName = await fetchPokemonNameFromApi(cleanPokemonName, 'zh-Hant');
+                    }
+                    
+                    if (apiName) {
+                        targetName = apiName;
+                        console.log(`[Quiz] Found CN name in API: ${targetName}`);
+                    } else {
+                        console.warn(`[Quiz] Failed to find CN name for ${cleanPokemonName}`);
+                    }
                 }
             } catch (e) {
                 console.warn('Failed to lookup CN name for quiz:', e);
@@ -54,7 +69,7 @@ exports.generateQuiz = async (req, res) => {
         }
 
         // Generate 3 wrong answers, fetching from database if needed
-        const wrongAnswers = generateWrongAnswers(pokemonName, allPokemonNames || [], isJP, isCN);
+        const wrongAnswers = generateWrongAnswers(cleanPokemonName, allPokemonNames || [], isJP, isCN);
 
         // Create multiple choice options (mix correct and wrong answers)
         const allChoices = [targetName, ...wrongAnswers];
