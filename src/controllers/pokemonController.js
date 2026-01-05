@@ -56,13 +56,17 @@ exports.syncPokemon = async (req, res) => {
                     try {
                         const pokemon = await fetchPokemonDetails(item.url);
 
-                        // Fetch species data to get Japanese name
+                        // Fetch species data to get Japanese and Chinese names
                         let nameJp = null;
+                        let nameCn = null;
                         if (pokemon.species && pokemon.species.url) {
                             try {
                                 const species = await fetchPokemonDetails(pokemon.species.url);
                                 const jpNameObj = species.names.find(n => n.language.name === 'ja');
                                 nameJp = jpNameObj ? jpNameObj.name : null;
+                                
+                                const cnNameObj = species.names.find(n => n.language.name === 'zh-Hans');
+                                nameCn = cnNameObj ? cnNameObj.name : null;
                             } catch (err) {
                                 console.warn(`Failed to fetch species for ${pokemon.name}:`, err.message);
                             }
@@ -91,13 +95,14 @@ exports.syncPokemon = async (req, res) => {
                             // Update existing
                             prepare(`
                                 UPDATE pokemon SET
-                                    name = ?, name_jp = ?, height = ?, weight = ?, base_experience = ?,
+                                    name = ?, name_jp = ?, name_cn = ?, height = ?, weight = ?, base_experience = ?,
                                     sprite_url = ?, types = ?, abilities = ?, stats = ?,
                                     updated_at = CURRENT_TIMESTAMP
                                 WHERE id = ?
                             `).run(
                                 pokemon.name,
                                 nameJp,
+                                nameCn,
                                 pokemon.height,
                                 pokemon.weight,
                                 pokemon.base_experience,
@@ -111,12 +116,13 @@ exports.syncPokemon = async (req, res) => {
                         } else {
                             // Insert new
                             prepare(`
-                                INSERT INTO pokemon (id, name, name_jp, height, weight, base_experience, sprite_url, types, abilities, stats)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                INSERT INTO pokemon (id, name, name_jp, name_cn, height, weight, base_experience, sprite_url, types, abilities, stats)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             `).run(
                                 pokemon.id,
                                 pokemon.name,
                                 nameJp,
+                                nameCn,
                                 pokemon.height,
                                 pokemon.weight,
                                 pokemon.base_experience,
@@ -279,6 +285,8 @@ exports.getAllPokemon = async (req, res) => {
         const parsed = pokemon.map(p => ({
             id: p.id,
             name: p.name,
+            nameJp: p.name_jp,
+            nameCn: p.name_cn,
             height: p.height,
             weight: p.weight,
             baseExperience: p.base_experience,
@@ -318,6 +326,8 @@ exports.getPokemonById = async (req, res) => {
             data: {
                 id: pokemon.id,
                 name: pokemon.name,
+                nameJp: pokemon.name_jp,
+                nameCn: pokemon.name_cn,
                 height: pokemon.height,
                 weight: pokemon.weight,
                 baseExperience: pokemon.base_experience,
@@ -344,15 +354,16 @@ exports.searchPokemon = async (req, res) => {
 
         const pokemon = prepare(`
             SELECT * FROM pokemon 
-            WHERE name LIKE ? OR name_jp LIKE ?
+            WHERE name LIKE ? OR name_jp LIKE ? OR name_cn LIKE ?
             ORDER BY id 
             LIMIT 20
-        `).all(`%${q}%`, `%${q}%`);
+        `).all(`%${q}%`, `%${q}%`, `%${q}%`);
 
         const parsed = pokemon.map(p => ({
             id: p.id,
             name: p.name,
             nameJp: p.name_jp,
+            nameCn: p.name_cn,
             height: p.height,
             weight: p.weight,
             baseExperience: p.base_experience,
@@ -387,6 +398,8 @@ exports.getPokemonByType = async (req, res) => {
         const parsed = pokemon.map(p => ({
             id: p.id,
             name: p.name,
+            nameJp: p.name_jp,
+            nameCn: p.name_cn,
             height: p.height,
             weight: p.weight,
             baseExperience: p.base_experience,

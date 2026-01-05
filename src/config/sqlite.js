@@ -79,6 +79,7 @@ async function initDatabase() {
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             name_jp TEXT,
+            name_cn TEXT,
             height INTEGER,
             weight INTEGER,
             base_experience INTEGER,
@@ -94,6 +95,13 @@ async function initDatabase() {
     // Migration: Add name_jp column if it doesn't exist
     try {
         db.run(`ALTER TABLE pokemon ADD COLUMN name_jp TEXT`);
+    } catch (e) {
+        // Column likely already exists, ignore error
+    }
+
+    // Migration: Add name_cn column if it doesn't exist
+    try {
+        db.run(`ALTER TABLE pokemon ADD COLUMN name_cn TEXT`);
     } catch (e) {
         // Column likely already exists, ignore error
     }
