@@ -56,6 +56,18 @@ exports.syncPokemon = async (req, res) => {
                     try {
                         const pokemon = await fetchPokemonDetails(item.url);
 
+                        // Fetch species data to get Japanese name
+                        let nameJp = null;
+                        if (pokemon.species && pokemon.species.url) {
+                            try {
+                                const species = await fetchPokemonDetails(pokemon.species.url);
+                                const jpNameObj = species.names.find(n => n.language.name === 'ja');
+                                nameJp = jpNameObj ? jpNameObj.name : null;
+                            } catch (err) {
+                                console.warn(`Failed to fetch species for ${pokemon.name}:`, err.message);
+                            }
+                        }
+
                         // Extract sprite URL
                         const spriteUrl = pokemon.sprites?.front_default ||
                             pokemon.sprites?.other?.['official-artwork']?.front_default || null;
@@ -79,12 +91,13 @@ exports.syncPokemon = async (req, res) => {
                             // Update existing
                             prepare(`
                                 UPDATE pokemon SET
-                                    name = ?, height = ?, weight = ?, base_experience = ?,
+                                    name = ?, name_jp = ?, height = ?, weight = ?, base_experience = ?,
                                     sprite_url = ?, types = ?, abilities = ?, stats = ?,
                                     updated_at = CURRENT_TIMESTAMP
                                 WHERE id = ?
                             `).run(
                                 pokemon.name,
+                                nameJp,
                                 pokemon.height,
                                 pokemon.weight,
                                 pokemon.base_experience,
@@ -98,11 +111,12 @@ exports.syncPokemon = async (req, res) => {
                         } else {
                             // Insert new
                             prepare(`
-                                INSERT INTO pokemon (id, name, height, weight, base_experience, sprite_url, types, abilities, stats)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                INSERT INTO pokemon (id, name, name_jp, height, weight, base_experience, sprite_url, types, abilities, stats)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             `).run(
                                 pokemon.id,
                                 pokemon.name,
+                                nameJp,
                                 pokemon.height,
                                 pokemon.weight,
                                 pokemon.base_experience,
@@ -153,6 +167,18 @@ exports.syncPokemon = async (req, res) => {
                 try {
                     const pokemon = await fetchPokemonDetails(item.url);
 
+                    // Fetch species data to get Japanese name
+                    let nameJp = null;
+                    if (pokemon.species && pokemon.species.url) {
+                        try {
+                            const species = await fetchPokemonDetails(pokemon.species.url);
+                            const jpNameObj = species.names.find(n => n.language.name === 'ja');
+                            nameJp = jpNameObj ? jpNameObj.name : null;
+                        } catch (err) {
+                            console.warn(`Failed to fetch species for ${pokemon.name}:`, err.message);
+                        }
+                    }
+
                     // Extract sprite URL
                     const spriteUrl = pokemon.sprites?.front_default ||
                         pokemon.sprites?.other?.['official-artwork']?.front_default || null;
@@ -176,12 +202,13 @@ exports.syncPokemon = async (req, res) => {
                         // Update existing
                         prepare(`
                             UPDATE pokemon SET
-                                name = ?, height = ?, weight = ?, base_experience = ?,
+                                name = ?, name_jp = ?, height = ?, weight = ?, base_experience = ?,
                                 sprite_url = ?, types = ?, abilities = ?, stats = ?,
                                 updated_at = CURRENT_TIMESTAMP
                             WHERE id = ?
                         `).run(
                             pokemon.name,
+                            nameJp,
                             pokemon.height,
                             pokemon.weight,
                             pokemon.base_experience,
@@ -195,11 +222,12 @@ exports.syncPokemon = async (req, res) => {
                     } else {
                         // Insert new
                         prepare(`
-                            INSERT INTO pokemon (id, name, height, weight, base_experience, sprite_url, types, abilities, stats)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO pokemon (id, name, name_jp, height, weight, base_experience, sprite_url, types, abilities, stats)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         `).run(
                             pokemon.id,
                             pokemon.name,
+                            nameJp,
                             pokemon.height,
                             pokemon.weight,
                             pokemon.base_experience,
@@ -374,6 +402,82 @@ exports.getPokemonByType = async (req, res) => {
         });
     } catch (error) {
         console.error('Get Pokemon by type error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Get a random unrevealed Pokemon for endless mode
+exports.getRandomUnrevealed = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Get all Pokemon IDs that the user has already revealed
+        const revealedPokemon = prepare(`
+            SELECT pokemon_id FROM player_pokemon_collection WHERE user_id = ?
+        `).all(userId);
+
+        const revealedIds = revealedPokemon.map(p => p.pokemon_id);
+
+        // Get total Pokemon count
+        const totalCount = prepare(`SELECT COUNT(*) as count FROM pokemon`).get();
+        
+        if (!totalCount || totalCount.count === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'No Pokemon available. Please sync Pokemon first.',
+                code: 'NO_POKEMON'
+            });
+        }
+
+        let pokemon;
+
+        if (revealedIds.length >= totalCount.count) {
+            // User has revealed all Pokemon - pick any random one
+            pokemon = prepare(`
+                SELECT * FROM pokemon 
+                ORDER BY RANDOM() 
+                LIMIT 1
+            `).get();
+        } else {
+            // Pick a random unrevealed Pokemon
+            const placeholders = revealedIds.length > 0 
+                ? `AND id NOT IN (${revealedIds.map(() => '?').join(',')})`
+                : '';
+            
+            const query = `
+                SELECT * FROM pokemon 
+                WHERE sprite_url IS NOT NULL ${placeholders}
+                ORDER BY RANDOM() 
+                LIMIT 1
+            `;
+
+            pokemon = revealedIds.length > 0
+                ? prepare(query).get(...revealedIds)
+                : prepare(query).get();
+        }
+
+        if (!pokemon) {
+            return res.status(404).json({
+                success: false,
+                error: 'No Pokemon found',
+                code: 'NO_POKEMON'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                id: pokemon.id,
+                name: pokemon.name,
+                spriteUrl: pokemon.sprite_url,
+                types: JSON.parse(pokemon.types || '[]'),
+                isNew: !revealedIds.includes(pokemon.id),
+                revealedCount: revealedIds.length,
+                totalCount: totalCount.count
+            }
+        });
+    } catch (error) {
+        console.error('Get random unrevealed Pokemon error:', error);
         res.status(500).json({ error: error.message });
     }
 };

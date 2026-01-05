@@ -10,6 +10,9 @@ router.use(authMiddleware);
 // Sync Pokemon from PokeAPI GraphQL to database
 router.post('/sync', pokemonController.syncPokemon);
 
+// Get a random unrevealed Pokemon for endless mode
+router.get('/random-unrevealed', pokemonController.getRandomUnrevealed);
+
 // Get all Pokemon from database
 router.get('/', pokemonController.getAllPokemon);
 

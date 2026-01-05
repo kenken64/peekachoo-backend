@@ -78,6 +78,7 @@ async function initDatabase() {
         CREATE TABLE IF NOT EXISTS pokemon (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
+            name_jp TEXT,
             height INTEGER,
             weight INTEGER,
             base_experience INTEGER,
@@ -89,6 +90,13 @@ async function initDatabase() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `);
+
+    // Migration: Add name_jp column if it doesn't exist
+    try {
+        db.run(`ALTER TABLE pokemon ADD COLUMN name_jp TEXT`);
+    } catch (e) {
+        // Column likely already exists, ignore error
+    }
 
     // Create games table
     db.run(`
