@@ -8,6 +8,7 @@ exports.generateQuiz = async (req, res) => {
     try {
         const { pokemonName, spriteUrl, allPokemonNames, lang } = req.body;
         const isJP = lang === 'jp';
+        const isCN = lang === 'cn';
 
         if (!pokemonName || !spriteUrl) {
             return res.status(400).json({
@@ -22,7 +23,7 @@ exports.generateQuiz = async (req, res) => {
             });
         }
 
-        // If JP, we need to find the Japanese name for the correct answer.
+        // If JP or CN, we need to find the localized name for the correct answer.
         let targetName = pokemonName;
         if (isJP) {
             try {
@@ -33,10 +34,19 @@ exports.generateQuiz = async (req, res) => {
             } catch (e) {
                 console.warn('Failed to lookup JP name for quiz:', e);
             }
+        } else if (isCN) {
+            try {
+                const dbResult = prepare('SELECT name_cn FROM pokemon WHERE LOWER(name) = ?').get(pokemonName.toLowerCase());
+                if (dbResult && dbResult.name_cn) {
+                    targetName = dbResult.name_cn;
+                }
+            } catch (e) {
+                console.warn('Failed to lookup CN name for quiz:', e);
+            }
         }
 
         // Generate 3 wrong answers, fetching from database if needed
-        const wrongAnswers = generateWrongAnswers(pokemonName, allPokemonNames || [], isJP);
+        const wrongAnswers = generateWrongAnswers(pokemonName, allPokemonNames || [], isJP, isCN);
 
         // Create multiple choice options (mix correct and wrong answers)
         const allChoices = [targetName, ...wrongAnswers];
@@ -82,8 +92,15 @@ exports.generateQuiz = async (req, res) => {
         console.log('AI identified Pokemon as:', aiAnswer);
         */
 
+        let questionText = 'What is the name of this Pokemon?';
+        if (isJP) {
+            questionText = 'このポケモンの名前は？';
+        } else if (isCN) {
+            questionText = '这只宝可梦的名字是？';
+        }
+
         res.json({
-            question: isJP ? 'このポケモンの名前は？' : 'What is the name of this Pokemon?',
+            question: questionText,
             choices: shuffledChoices,
             correctAnswer: targetName,
             spriteUrl: spriteUrl
@@ -102,7 +119,7 @@ exports.generateQuiz = async (req, res) => {
  * Generate wrong answer choices
  * Fetches from database if not enough Pokemon names provided
  */
-function generateWrongAnswers(correctAnswer, allNames, isJP = false) {
+function generateWrongAnswers(correctAnswer, allNames, isJP = false, isCN = false) {
     // Filter out the correct answer from provided names
     let availableNames = allNames.filter(
         name => name.toLowerCase() !== correctAnswer.toLowerCase()
@@ -125,6 +142,26 @@ function generateWrongAnswers(correctAnswer, allNames, isJP = false) {
         } catch (e) {
             console.error('JP Quiz generation error', e);
             return ['ピカチュウ', 'ヒトカゲ', 'ゼニガメ']; // Fallback
+        }
+    }
+
+    if (isCN) {
+        try {
+             const excludeNames = [correctAnswer.toLowerCase(), ...availableNames.map(n => n.toLowerCase())];
+             const placeholders = excludeNames.map(() => '?').join(',');
+             
+             const dbPokemon = prepare(`
+                SELECT name_cn FROM pokemon
+                WHERE LOWER(name) NOT IN (${placeholders})
+                AND name_cn IS NOT NULL
+                ORDER BY RANDOM()
+                LIMIT 3
+            `).all(...excludeNames);
+            
+            return dbPokemon.map(p => p.name_cn);
+        } catch (e) {
+            console.error('CN Quiz generation error', e);
+            return ['皮卡丘', '小火龙', '杰尼龟']; // Fallback
         }
     }
 
