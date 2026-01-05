@@ -339,13 +339,18 @@ exports.completeAuthentication = async (req, res) => {
         const user = prepare('SELECT * FROM users WHERE id = ?').get(credential.user_id);
         const token = generateToken(user);
 
+        // Get user level
+        const stats = prepare('SELECT highest_level_reached FROM player_stats WHERE user_id = ?').get(user.id);
+        const level = stats ? stats.highest_level_reached : 0;
+
         res.json({
             verified: true,
             token,
             user: {
                 id: user.id,
                 username: user.username,
-                displayName: user.display_name
+                displayName: user.display_name,
+                level
             }
         });
     } catch (error) {
@@ -361,10 +366,16 @@ exports.getCurrentUser = async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
+
+        // Get user level
+        const stats = prepare('SELECT highest_level_reached FROM player_stats WHERE user_id = ?').get(req.user.id);
+        const level = stats ? stats.highest_level_reached : 0;
+
         res.json({
             id: user.id,
             username: user.username,
-            displayName: user.display_name
+            displayName: user.display_name,
+            level
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
