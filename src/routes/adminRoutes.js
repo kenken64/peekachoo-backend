@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { adminApiKeyAuth } = require('../middlewares/authMiddleware');
 const adminController = require('../controllers/adminController');
+const pokemonController = require('../controllers/pokemonController');
 
 // All admin routes are protected by API key
 router.use(adminApiKeyAuth);
@@ -17,5 +18,8 @@ router.get('/users/:id', adminController.getUserById);
 
 // DELETE /api/admin/users/:id - Delete user by ID
 router.delete('/users/:id', adminController.deleteUser);
+
+// POST /api/admin/pokemon/sync - Sync Pokemon database
+router.post('/pokemon/sync', pokemonController.syncPokemon);
 
 module.exports = router;
