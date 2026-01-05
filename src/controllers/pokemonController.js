@@ -470,6 +470,7 @@ exports.getRandomUnrevealed = async (req, res) => {
             data: {
                 id: pokemon.id,
                 name: pokemon.name,
+                name_jp: pokemon.name_jp,
                 spriteUrl: pokemon.sprite_url,
                 types: JSON.parse(pokemon.types || '[]'),
                 isNew: !revealedIds.includes(pokemon.id),
