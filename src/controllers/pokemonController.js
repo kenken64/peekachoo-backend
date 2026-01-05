@@ -344,14 +344,15 @@ exports.searchPokemon = async (req, res) => {
 
         const pokemon = prepare(`
             SELECT * FROM pokemon 
-            WHERE name LIKE ? 
+            WHERE name LIKE ? OR name_jp LIKE ?
             ORDER BY id 
             LIMIT 20
-        `).all(`%${q}%`);
+        `).all(`%${q}%`, `%${q}%`);
 
         const parsed = pokemon.map(p => ({
             id: p.id,
             name: p.name,
+            nameJp: p.name_jp,
             height: p.height,
             weight: p.weight,
             baseExperience: p.base_experience,

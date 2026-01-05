@@ -6,7 +6,8 @@ const { prepare } = require('../config/sqlite');
  */
 exports.generateQuiz = async (req, res) => {
     try {
-        const { pokemonName, spriteUrl, allPokemonNames } = req.body;
+        const { pokemonName, spriteUrl, allPokemonNames, lang } = req.body;
+        const isJP = lang === 'jp';
 
         if (!pokemonName || !spriteUrl) {
             return res.status(400).json({
@@ -21,11 +22,24 @@ exports.generateQuiz = async (req, res) => {
             });
         }
 
+        // If JP, we need to find the Japanese name for the correct answer.
+        let targetName = pokemonName;
+        if (isJP) {
+            try {
+                const dbResult = prepare('SELECT name_jp FROM pokemon WHERE LOWER(name) = ?').get(pokemonName.toLowerCase());
+                if (dbResult && dbResult.name_jp) {
+                    targetName = dbResult.name_jp;
+                }
+            } catch (e) {
+                console.warn('Failed to lookup JP name for quiz:', e);
+            }
+        }
+
         // Generate 3 wrong answers, fetching from database if needed
-        const wrongAnswers = generateWrongAnswers(pokemonName, allPokemonNames || []);
+        const wrongAnswers = generateWrongAnswers(pokemonName, allPokemonNames || [], isJP);
 
         // Create multiple choice options (mix correct and wrong answers)
-        const allChoices = [pokemonName, ...wrongAnswers];
+        const allChoices = [targetName, ...wrongAnswers];
         const shuffledChoices = shuffleArray(allChoices);
 
         // Use OpenAI Vision API to verify the Pokemon (optional enhancement)
@@ -69,9 +83,9 @@ exports.generateQuiz = async (req, res) => {
         */
 
         res.json({
-            question: 'What is the name of this Pokemon?',
+            question: isJP ? 'このポケモンの名前は？' : 'What is the name of this Pokemon?',
             choices: shuffledChoices,
-            correctAnswer: pokemonName,
+            correctAnswer: targetName,
             spriteUrl: spriteUrl
         });
 
@@ -88,11 +102,31 @@ exports.generateQuiz = async (req, res) => {
  * Generate wrong answer choices
  * Fetches from database if not enough Pokemon names provided
  */
-function generateWrongAnswers(correctAnswer, allNames) {
+function generateWrongAnswers(correctAnswer, allNames, isJP = false) {
     // Filter out the correct answer from provided names
     let availableNames = allNames.filter(
         name => name.toLowerCase() !== correctAnswer.toLowerCase()
     );
+
+    if (isJP) {
+        try {
+             const excludeNames = [correctAnswer.toLowerCase(), ...availableNames.map(n => n.toLowerCase())];
+             const placeholders = excludeNames.map(() => '?').join(',');
+             
+             const dbPokemon = prepare(`
+                SELECT name_jp FROM pokemon
+                WHERE LOWER(name) NOT IN (${placeholders})
+                AND name_jp IS NOT NULL
+                ORDER BY RANDOM()
+                LIMIT 3
+            `).all(...excludeNames);
+            
+            return dbPokemon.map(p => p.name_jp);
+        } catch (e) {
+            console.error('JP Quiz generation error', e);
+            return ['ピカチュウ', 'ヒトカゲ', 'ゼニガメ']; // Fallback
+        }
+    }
 
     // If we don't have enough names (need at least 3 wrong answers), fetch from database
     if (availableNames.length < 3) {
