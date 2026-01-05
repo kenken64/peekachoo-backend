@@ -30,6 +30,10 @@ exports.generateQuiz = async (req, res) => {
                 const dbResult = prepare('SELECT name_jp FROM pokemon WHERE LOWER(name) = ?').get(pokemonName.toLowerCase());
                 if (dbResult && dbResult.name_jp) {
                     targetName = dbResult.name_jp;
+                } else {
+                    // Fallback: Try to fetch from PokeAPI if not in DB
+                    const apiName = await fetchPokemonNameFromApi(pokemonName, 'ja');
+                    if (apiName) targetName = apiName;
                 }
             } catch (e) {
                 console.warn('Failed to lookup JP name for quiz:', e);
@@ -39,6 +43,10 @@ exports.generateQuiz = async (req, res) => {
                 const dbResult = prepare('SELECT name_cn FROM pokemon WHERE LOWER(name) = ?').get(pokemonName.toLowerCase());
                 if (dbResult && dbResult.name_cn) {
                     targetName = dbResult.name_cn;
+                } else {
+                    // Fallback: Try to fetch from PokeAPI if not in DB
+                    const apiName = await fetchPokemonNameFromApi(pokemonName, 'zh-Hans');
+                    if (apiName) targetName = apiName;
                 }
             } catch (e) {
                 console.warn('Failed to lookup CN name for quiz:', e);
@@ -114,6 +122,20 @@ exports.generateQuiz = async (req, res) => {
         });
     }
 };
+
+/**
+ * Helper to fetch localized name from PokeAPI
+ */
+async function fetchPokemonNameFromApi(pokemonName, langCode) {
+    try {
+        const response = await axios.get(`https://pokeapi.co/api/v2/pokemon-species/${pokemonName.toLowerCase()}`);
+        const nameObj = response.data.names.find(n => n.language.name === langCode);
+        return nameObj ? nameObj.name : null;
+    } catch (error) {
+        console.warn(`Failed to fetch ${langCode} name for ${pokemonName} from API:`, error.message);
+        return null;
+    }
+}
 
 /**
  * Generate wrong answer choices
