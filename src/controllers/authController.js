@@ -362,7 +362,7 @@ exports.completeAuthentication = async (req, res) => {
 // Get current user
 exports.getCurrentUser = async (req, res) => {
     try {
-        const user = prepare('SELECT id, username, display_name FROM users WHERE id = ?').get(req.user.id);
+        const user = prepare('SELECT id, username, display_name, shields FROM users WHERE id = ?').get(req.user.id);
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -375,9 +375,61 @@ exports.getCurrentUser = async (req, res) => {
             id: user.id,
             username: user.username,
             displayName: user.display_name,
+            shields: user.shields || 0,
             level
         });
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Purchase shield
+exports.purchaseShield = async (req, res) => {
+    try {
+        const { quantity } = req.body;
+        const qty = parseInt(quantity) || 1;
+        
+        if (qty < 1) {
+            return res.status(400).json({ error: 'Invalid quantity' });
+        }
+
+        // Update user shields
+        prepare('UPDATE users SET shields = COALESCE(shields, 0) + ? WHERE id = ?').run(qty, req.user.id);
+        saveDatabase();
+
+        const user = prepare('SELECT shields FROM users WHERE id = ?').get(req.user.id);
+
+        res.json({
+            success: true,
+            shields: user.shields
+        });
+    } catch (error) {
+        console.error('Purchase error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Consume shield
+exports.consumeShield = async (req, res) => {
+    try {
+        const user = prepare('SELECT shields FROM users WHERE id = ?').get(req.user.id);
+        
+        if (!user || !user.shields || user.shields < 1) {
+            return res.status(400).json({ error: 'No shields available' });
+        }
+
+        // Decrement user shields
+        prepare('UPDATE users SET shields = shields - 1 WHERE id = ?').run(req.user.id);
+        saveDatabase();
+
+        const updatedUser = prepare('SELECT shields FROM users WHERE id = ?').get(req.user.id);
+
+        res.json({
+            success: true,
+            shields: updatedUser.shields
+        });
+    } catch (error) {
+        console.error('Consume shield error:', error);
         res.status(500).json({ error: error.message });
     }
 };

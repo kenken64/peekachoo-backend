@@ -29,4 +29,10 @@ router.post('/login/complete', authController.completeAuthentication);
 // Protected endpoint - get current user
 router.get('/me', authMiddleware, authController.getCurrentUser);
 
+// Protected endpoint - purchase shield
+router.post('/purchase-shield', authMiddleware, authController.purchaseShield);
+
+// Protected endpoint - consume shield
+router.post('/consume-shield', authMiddleware, authController.consumeShield);
+
 module.exports = router;

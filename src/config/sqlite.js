@@ -99,6 +99,13 @@ async function initDatabase() {
         // Column likely already exists, ignore error
     }
 
+    // Migration: Add shields column to users table
+    try {
+        db.run(`ALTER TABLE users ADD COLUMN shields INTEGER DEFAULT 0`);
+    } catch (e) {
+        // Column likely already exists
+    }
+
     // Migration: Add name_cn column if it doesn't exist
     try {
         db.run(`ALTER TABLE pokemon ADD COLUMN name_cn TEXT`);
