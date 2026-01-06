@@ -8,6 +8,7 @@ const leaderboardRoutes = require('./leaderboardRoutes');
 const statsRoutes = require('./statsRoutes');
 const achievementsRoutes = require('./achievementsRoutes');
 const adminRoutes = require('./adminRoutes');
+const paymentRoutes = require('./paymentRoutes');
 
 const router = express.Router();
 
@@ -40,5 +41,6 @@ router.use('/leaderboard', leaderboardRoutes);
 router.use('/stats', statsRoutes);
 router.use('/achievements', achievementsRoutes);
 router.use('/admin', adminRoutes);
+router.use('/payment', paymentRoutes);
 
 module.exports = router;
