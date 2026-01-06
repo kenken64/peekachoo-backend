@@ -2,6 +2,9 @@ const crypto = require('crypto');
 const { prepare, saveDatabase } = require('../config/sqlite');
 const { razorpay: razorpayConfig } = require('../config/config');
 
+// Monthly spending limit in SGD
+const MONTHLY_LIMIT_SGD = 50.00;
+
 let razorpay = null;
 let RazorpayClass = null;
 try {
@@ -16,6 +19,64 @@ try {
     // Do not crash, just log. createOrder will fail if called.
 }
 
+// Helper: Get first day of next month
+function getNextMonthFirstDay(date) {
+    const d = new Date(date);
+    return new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString();
+}
+
+// Helper: Check and reset monthly spending if needed
+function checkAndResetMonthlySpending(userId) {
+    const user = prepare(`
+        SELECT monthly_spent, first_purchase_date, purchase_reset_date 
+        FROM users WHERE id = ?
+    `).get(userId);
+
+    if (!user) return null;
+
+    const now = new Date();
+    const resetDate = user.purchase_reset_date ? new Date(user.purchase_reset_date) : null;
+
+    // If reset date has passed, reset the monthly spending
+    if (resetDate && now >= resetDate) {
+        prepare(`
+            UPDATE users 
+            SET monthly_spent = 0, first_purchase_date = NULL, purchase_reset_date = NULL 
+            WHERE id = ?
+        `).run(userId);
+        saveDatabase();
+        return { monthly_spent: 0, first_purchase_date: null, purchase_reset_date: null };
+    }
+
+    return user;
+}
+
+// Check if user can purchase (API endpoint)
+exports.checkPurchaseStatus = async (req, res) => {
+    try {
+        const userStatus = checkAndResetMonthlySpending(req.user.id);
+        if (!userStatus) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const monthlySpent = userStatus.monthly_spent || 0;
+        const remainingAllowance = Math.max(0, MONTHLY_LIMIT_SGD - monthlySpent);
+        const canPurchase = remainingAllowance > 0;
+
+        res.json({
+            canPurchase,
+            monthlySpent,
+            monthlyLimit: MONTHLY_LIMIT_SGD,
+            remainingAllowance,
+            firstPurchaseDate: userStatus.first_purchase_date,
+            purchaseResetDate: userStatus.purchase_reset_date
+        });
+    } catch (error) {
+        console.error('Check purchase status error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 exports.createOrder = async (req, res) => {
     if (!razorpay) {
         return res.status(503).json({ error: 'Payment service unavailable (configuration error)' });
@@ -25,9 +86,33 @@ exports.createOrder = async (req, res) => {
         const qty = parseInt(quantity) || 1;
         if (qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
 
-        // Price configuration
+        // Price configuration (in USD for Razorpay, but limit is SGD)
         const unitPriceUSD = 0.20;
         const unitPriceCents = unitPriceUSD * 100;
+        const orderAmountUSD = qty * unitPriceUSD;
+        
+        // Approximate USD to SGD conversion (1 USD ≈ 1.35 SGD)
+        const USD_TO_SGD = 1.35;
+        const orderAmountSGD = orderAmountUSD * USD_TO_SGD;
+
+        // Check monthly limit
+        const userStatus = checkAndResetMonthlySpending(req.user.id);
+        if (!userStatus) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const monthlySpent = userStatus.monthly_spent || 0;
+        const remainingAllowance = MONTHLY_LIMIT_SGD - monthlySpent;
+
+        if (orderAmountSGD > remainingAllowance) {
+            return res.status(400).json({ 
+                error: 'Monthly purchase limit exceeded',
+                monthlySpent,
+                monthlyLimit: MONTHLY_LIMIT_SGD,
+                remainingAllowance,
+                requestedAmount: orderAmountSGD
+            });
+        }
         
         const options = {
             amount: Math.round(qty * unitPriceCents), // Amount in smallest currency unit
@@ -64,26 +149,46 @@ exports.verifyPayment = async (req, res) => {
         if (generated_signature === razorpay_signature) {
              // Payment successful
              const qty = parseInt(quantity) || 1;
-             const unitPrice = 0.20;
-             const cost = qty * unitPrice;
+             const unitPriceUSD = 0.20;
+             const costUSD = qty * unitPriceUSD;
+             
+             // Convert to SGD for tracking
+             const USD_TO_SGD = 1.35;
+             const costSGD = costUSD * USD_TO_SGD;
 
              console.log(`Processing valid payment ${razorpay_payment_id} for user ${req.user.id}`);
              
-             // Update user
+             // Get current user data
+             const currentUser = prepare('SELECT first_purchase_date FROM users WHERE id = ?').get(req.user.id);
+             
+             const now = new Date().toISOString();
+             let firstPurchaseDate = currentUser?.first_purchase_date || now;
+             let purchaseResetDate = getNextMonthFirstDay(firstPurchaseDate);
+
+             // Update user with shields and monthly tracking
              prepare(`
                 UPDATE users 
                 SET 
                     shields = COALESCE(shields, 0) + ?,
                     total_shields_purchased = COALESCE(total_shields_purchased, 0) + ?,
-                    total_spent = COALESCE(total_spent, 0) + ?
+                    total_spent = COALESCE(total_spent, 0) + ?,
+                    monthly_spent = COALESCE(monthly_spent, 0) + ?,
+                    first_purchase_date = COALESCE(first_purchase_date, ?),
+                    purchase_reset_date = COALESCE(purchase_reset_date, ?)
                 WHERE id = ?
-            `).run(qty, qty, cost, req.user.id);
+            `).run(qty, qty, costUSD, costSGD, firstPurchaseDate, purchaseResetDate, req.user.id);
             
             saveDatabase();
             
-            const user = prepare('SELECT shields FROM users WHERE id = ?').get(req.user.id);
+            const user = prepare('SELECT shields, monthly_spent, purchase_reset_date FROM users WHERE id = ?').get(req.user.id);
             
-            res.json({ success: true, shields: user.shields });
+            res.json({ 
+                success: true, 
+                shields: user.shields,
+                monthlySpent: user.monthly_spent,
+                purchaseResetDate: user.purchase_reset_date,
+                remainingAllowance: Math.max(0, MONTHLY_LIMIT_SGD - user.monthly_spent)
+            });
         } else {
             res.status(400).json({ error: 'Invalid signature' });
         }

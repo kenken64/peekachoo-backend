@@ -15,12 +15,12 @@ const getUsers = async (req, res) => {
         const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
         
         // Validate sortBy to prevent SQL injection
-        const allowedSortColumns = ['username', 'created_at', 'total_spent', 'shields', 'total_shields_purchased'];
+        const allowedSortColumns = ['username', 'created_at', 'total_spent', 'shields', 'total_shields_purchased', 'monthly_spent', 'purchase_reset_date'];
         const sortColumn = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
 
         // Get total count
         let countQuery = 'SELECT COUNT(*) as total FROM users';
-        let dataQuery = 'SELECT id, username, display_name, created_at, updated_at, shields, total_shields_purchased, total_spent FROM users';
+        let dataQuery = 'SELECT id, username, display_name, created_at, updated_at, shields, total_shields_purchased, total_spent, monthly_spent, first_purchase_date, purchase_reset_date FROM users';
 
         if (search) {
             const whereClause = ' WHERE username LIKE ?';

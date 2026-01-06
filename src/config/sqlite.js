@@ -141,6 +141,19 @@ async function initDatabase() {
         console.error('Migration warning: Failed to backfill shield data', e);
     }
 
+    // Migration: Add monthly purchase tracking columns
+    try {
+        db.run(`ALTER TABLE users ADD COLUMN monthly_spent REAL DEFAULT 0.0`);
+    } catch (e) {}
+
+    try {
+        db.run(`ALTER TABLE users ADD COLUMN first_purchase_date TEXT`);
+    } catch (e) {}
+
+    try {
+        db.run(`ALTER TABLE users ADD COLUMN purchase_reset_date TEXT`);
+    } catch (e) {}
+
     // Create games table
     db.run(`
         CREATE TABLE IF NOT EXISTS games (
