@@ -434,13 +434,18 @@ exports.syncRazorpayPayments = async (req, res) => {
         }
 
         // Get ALL users who have purchases (not just affected by this sync)
+        console.log('[Razorpay Sync] Getting all users with purchases...');
         const usersWithPurchases = prepare(`SELECT DISTINCT user_id FROM purchases`).all();
+        console.log(`[Razorpay Sync] Found ${usersWithPurchases.length} users with purchases:`, JSON.stringify(usersWithPurchases));
+        
         for (const row of usersWithPurchases) {
             affectedUserIds.add(row.user_id);
         }
+        console.log(`[Razorpay Sync] Total affected users to recalculate: ${affectedUserIds.size}`);
 
         // Recalculate totals for affected users
         for (const userId of affectedUserIds) {
+            console.log(`[Razorpay Sync] === Recalculating user: ${userId} ===`);
             try {
                 // Sum all purchases for this user
                 const totals = prepare(`
@@ -490,6 +495,8 @@ exports.syncRazorpayPayments = async (req, res) => {
                 const purchaseResetDate = nextMonthStart;
 
                 // Update user totals
+                console.log(`[Razorpay Sync] Updating user ${userId}: shields=${totalShields}, totalSpent=${totalSpent}, monthlySpent=${monthlySpent}, resetDate=${purchaseResetDate}`);
+                
                 prepare(`
                     UPDATE users 
                     SET 
@@ -502,6 +509,7 @@ exports.syncRazorpayPayments = async (req, res) => {
                     WHERE id = ?
                 `).run(totalShields, totalSpent, totalShields, monthlySpent, firstPurchaseDate, purchaseResetDate, userId);
 
+                console.log(`[Razorpay Sync] User ${userId} updated successfully`);
                 results.usersRecalculated++;
                 console.log(`[Razorpay Sync] Recalculated user ${userId}: shields=${totalShields}, spent=${totalSpent}, monthly=${monthlySpent}, resetDate=${purchaseResetDate}`);
 
