@@ -14,6 +14,9 @@ ARG RP_NAME
 ARG CORS_ORIGIN
 ARG OPENAI_API_KEY
 ARG DATABASE_PATH
+ARG RAZORPAY_KEY_ID
+ARG RAZORPAY_KEY_SECRET
+ARG RAZORPAY_WEBHOOK_SECRET
 
 # Set environment variables
 ENV PORT=${PORT:-3000}
@@ -25,6 +28,9 @@ ENV RP_NAME=${RP_NAME:-Peekachoo}
 ENV CORS_ORIGIN=${CORS_ORIGIN}
 ENV OPENAI_API_KEY=${OPENAI_API_KEY}
 ENV DATABASE_PATH=${DATABASE_PATH:-./data/peekachoo.db}
+ENV RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+ENV RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+ENV RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
 
 # Copy package files
 COPY package*.json ./
@@ -43,7 +49,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:${PORT:-3000}/api', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "require('http').get('http://localhost:${PORT:-3000}/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Start the application
 CMD ["npm", "start"]
