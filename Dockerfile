@@ -1,6 +1,9 @@
 # Use Node.js LTS version
-# Build: 2026-01-07-v2
+# Build: 2026-01-07-v3
 FROM node:18-alpine
+
+# Install required packages for native modules
+RUN apk add --no-cache python3 make g++
 
 # Set working directory
 WORKDIR /app
