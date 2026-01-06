@@ -3,12 +3,21 @@ const crypto = require('crypto');
 const { prepare, saveDatabase } = require('../config/sqlite');
 const { razorpay: razorpayConfig } = require('../config/config');
 
-const razorpay = new Razorpay({
-    key_id: razorpayConfig.key_id,
-    key_secret: razorpayConfig.key_secret
-});
+let razorpay;
+try {
+    razorpay = new Razorpay({
+        key_id: razorpayConfig.key_id,
+        key_secret: razorpayConfig.key_secret
+    });
+} catch (error) {
+    console.error('Failed to initialize Razorpay:', error.message);
+    // Do not crash, just log. createOrder will fail if called.
+}
 
 exports.createOrder = async (req, res) => {
+    if (!razorpay) {
+        return res.status(503).json({ error: 'Payment service unavailable (configuration error)' });
+    }
     try {
         const { quantity } = req.body;
         const qty = parseInt(quantity) || 1;

@@ -13,7 +13,9 @@ if (!fs.existsSync(dataDir)) {
 let db = null;
 
 async function initDatabase() {
+    console.log('[SQLite] Loading sql.js wasm...');
     const SQL = await initSqlJs();
+    console.log('[SQLite] sql.js loaded');
     
     // Load existing database or create new one
     if (fs.existsSync(dbPath)) {
