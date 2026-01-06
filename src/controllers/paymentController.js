@@ -158,7 +158,21 @@ exports.verifyPayment = async (req, res) => {
 
         if (generated_signature === razorpay_signature) {
              // Payment successful
-             const qty = parseInt(quantity) || 1;
+             let qty = parseInt(quantity) || 0;
+             
+             // If quantity not provided, try to fetch from Razorpay order notes
+             if (!qty && razorpay && razorpay_order_id) {
+                 try {
+                     const order = await razorpay.orders.fetch(razorpay_order_id);
+                     qty = parseInt(order.notes?.quantity) || 1;
+                     console.log(`Fetched quantity ${qty} from Razorpay order notes`);
+                 } catch (e) {
+                     console.error('Failed to fetch order from Razorpay:', e.message);
+                     qty = 1;
+                 }
+             }
+             
+             if (!qty) qty = 1; // Final fallback
              
              // Price in SGD (unit price: SGD $0.27 ≈ USD $0.20)
              const unitPriceSGD = 0.27;
