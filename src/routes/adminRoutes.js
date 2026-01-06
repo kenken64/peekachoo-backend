@@ -29,4 +29,7 @@ router.post('/pokemon/sync', pokemonController.syncPokemon);
 // POST /api/admin/payments/sync - Sync payments from Razorpay
 router.post('/payments/sync', paymentController.syncRazorpayPayments);
 
+// GET /api/admin/payments/debug - Debug endpoint for sync issues
+router.get('/payments/debug', paymentController.debugSyncData);
+
 module.exports = router;

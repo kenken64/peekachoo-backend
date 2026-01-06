@@ -291,6 +291,47 @@ exports.getPurchaseHistory = async (req, res) => {
     }
 };
 
+// Debug endpoint to check raw data
+exports.debugSyncData = async (req, res) => {
+    try {
+        // Get all purchases with raw created_at
+        const allPurchases = prepare(`SELECT user_id, quantity, amount_sgd, created_at FROM purchases`).all();
+        
+        // Get user data
+        const userData = prepare(`SELECT id, username, monthly_spent, purchase_reset_date, first_purchase_date FROM users WHERE total_spent > 0 OR id IN (SELECT DISTINCT user_id FROM purchases)`).all();
+        
+        // Check date comparison
+        const now = new Date();
+        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+        
+        // Test query for first user with purchases
+        let testResult = null;
+        if (allPurchases.length > 0) {
+            const testUserId = allPurchases[0].user_id;
+            testResult = prepare(`
+                SELECT SUM(amount_sgd) as monthly_spent
+                FROM purchases 
+                WHERE user_id = ? AND created_at >= ? AND created_at < ?
+            `).get(testUserId, currentMonthStart, nextMonthStart);
+        }
+        
+        res.json({
+            debug: true,
+            currentMonthStart,
+            nextMonthStart,
+            serverTime: now.toISOString(),
+            purchasesCount: allPurchases.length,
+            purchases: allPurchases,
+            usersWithPurchaseData: userData,
+            testMonthlyQuery: testResult
+        });
+    } catch (error) {
+        console.error('Debug error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // Sync payments from Razorpay (admin endpoint)
 exports.syncRazorpayPayments = async (req, res) => {
     if (!razorpay) {
