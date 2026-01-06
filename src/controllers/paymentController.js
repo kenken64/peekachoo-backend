@@ -309,31 +309,46 @@ exports.syncRazorpayPayments = async (req, res) => {
             usersRecalculated: 0
         };
 
-        // Fetch all payments from Razorpay (last 30 days by default)
+        // Fetch orders from Razorpay (last 30 days) - orders have the notes with userId
         const thirtyDaysAgo = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
         
-        let payments = [];
+        let orders = [];
         let skip = 0;
         const count = 100;
         
-        // Paginate through all payments
-        while (true) {
-            const batch = await razorpay.payments.all({
-                from: thirtyDaysAgo,
-                count: count,
-                skip: skip
-            });
-            
-            if (!batch.items || batch.items.length === 0) break;
-            
-            payments = payments.concat(batch.items);
-            skip += batch.items.length;
-            
-            if (batch.items.length < count) break;
+        // Paginate through all orders
+        console.log('[Razorpay Sync] Fetching orders from Razorpay...');
+        try {
+            while (true) {
+                console.log(`[Razorpay Sync] Fetching orders batch, skip=${skip}...`);
+                const batch = await razorpay.orders.all({
+                    from: thirtyDaysAgo,
+                    count: count,
+                    skip: skip
+                });
+                
+                console.log(`[Razorpay Sync] Batch received: ${batch.items?.length || 0} orders`);
+                
+                if (!batch.items || batch.items.length === 0) break;
+                
+                orders = orders.concat(batch.items);
+                skip += batch.items.length;
+                
+                if (batch.items.length < count) break;
+                
+                // Safety limit to prevent infinite loops
+                if (orders.length > 1000) {
+                    console.log('[Razorpay Sync] Reached safety limit of 1000 orders');
+                    break;
+                }
+            }
+        } catch (fetchError) {
+            console.error('[Razorpay Sync] Error fetching orders:', fetchError);
+            return res.status(500).json({ error: `Failed to fetch orders from Razorpay: ${fetchError.message}` });
         }
         
-        results.fetched = payments.length;
-        console.log(`[Razorpay Sync] Fetched ${payments.length} payments from Razorpay`);
+        results.fetched = orders.length;
+        console.log(`[Razorpay Sync] Fetched ${orders.length} orders from Razorpay`);
 
         const affectedUserIds = new Set();
 
