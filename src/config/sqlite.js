@@ -122,6 +122,23 @@ async function initDatabase() {
         db.run(`ALTER TABLE users ADD COLUMN total_spent REAL DEFAULT 0.0`);
     } catch (e) {}
 
+    // Migration: Backfill total_shields_purchased for existing users with shields
+    // This assumes existing shields were purchased at $0.20 each.
+    // Only updates users who have shields but no purchase history recorded yet.
+    try {
+        db.run(`
+            UPDATE users 
+            SET 
+                total_shields_purchased = shields, 
+                total_spent = shields * 0.20 
+            WHERE 
+                shields > 0 AND 
+                (total_shields_purchased IS NULL OR total_shields_purchased = 0)
+        `);
+    } catch (e) {
+        console.error('Migration warning: Failed to backfill shield data', e);
+    }
+
     // Create games table
     db.run(`
         CREATE TABLE IF NOT EXISTS games (
