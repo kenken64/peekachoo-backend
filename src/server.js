@@ -21,10 +21,10 @@ async function start() {
     // Initialize WebSocket server
     websocketService.initialize(server);
 
-    // Start server
-    server.listen(port, () => {
-        console.log(`Server is running on http://localhost:${port}`);
-        console.log(`WebSocket available at ws://localhost:${port}/ws`);
+    // Start server - bind to 0.0.0.0 for Docker compatibility
+    server.listen(port, '0.0.0.0', () => {
+        console.log(`Server is running on http://0.0.0.0:${port}`);
+        console.log(`WebSocket available at ws://0.0.0.0:${port}/ws`);
         console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 
