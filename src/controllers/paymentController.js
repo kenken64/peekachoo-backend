@@ -403,15 +403,16 @@ exports.syncRazorpayPayments = async (req, res) => {
                 affectedUserIds.add(userId);
 
                 if (existingPurchase) {
-                    // Update if quantity or amount is different
+                    // Always update to ensure created_at is correct
+                    prepare(`
+                        UPDATE purchases 
+                        SET quantity = ?, amount_sgd = ?, razorpay_payment_id = COALESCE(?, razorpay_payment_id), created_at = ?
+                        WHERE razorpay_order_id = ?
+                    `).run(quantity, amountSGD, paymentId, createdAt, orderId);
+                    
                     if (existingPurchase.quantity !== quantity || Math.abs(existingPurchase.amount_sgd - amountSGD) > 0.01) {
-                        prepare(`
-                            UPDATE purchases 
-                            SET quantity = ?, amount_sgd = ?, razorpay_payment_id = COALESCE(?, razorpay_payment_id)
-                            WHERE razorpay_order_id = ?
-                        `).run(quantity, amountSGD, paymentId, orderId);
                         results.updated++;
-                        console.log(`[Razorpay Sync] Updated purchase ${orderId}: qty=${quantity}, amt=${amountSGD}`);
+                        console.log(`[Razorpay Sync] Updated purchase ${orderId}: qty=${quantity}, amt=${amountSGD}, date=${createdAt}`);
                     } else {
                         results.skipped++;
                     }
@@ -462,12 +463,20 @@ exports.syncRazorpayPayments = async (req, res) => {
                 const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
                 const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
                 
+                console.log(`[Razorpay Sync] User ${userId}: checking purchases between ${currentMonthStart} and ${nextMonthStart}`);
+                
+                // Debug: List all purchases for this user
+                const allPurchases = prepare(`SELECT created_at, amount_sgd FROM purchases WHERE user_id = ?`).all(userId);
+                console.log(`[Razorpay Sync] User ${userId} purchases:`, JSON.stringify(allPurchases));
+                
                 // Sum purchases in current calendar month
                 const monthlyTotals = prepare(`
                     SELECT SUM(amount_sgd) as monthly_spent
                     FROM purchases 
                     WHERE user_id = ? AND created_at >= ? AND created_at < ?
                 `).get(userId, currentMonthStart, nextMonthStart);
+                
+                console.log(`[Razorpay Sync] User ${userId} monthly totals:`, JSON.stringify(monthlyTotals));
                 
                 const monthlySpent = monthlyTotals?.monthly_spent || 0;
                 
