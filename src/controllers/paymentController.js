@@ -86,14 +86,9 @@ exports.createOrder = async (req, res) => {
         const qty = parseInt(quantity) || 1;
         if (qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
 
-        // Price configuration (in USD for Razorpay, but limit is SGD)
-        const unitPriceUSD = 0.20;
-        const unitPriceCents = unitPriceUSD * 100;
-        const orderAmountUSD = qty * unitPriceUSD;
-        
-        // Approximate USD to SGD conversion (1 USD ≈ 1.35 SGD)
-        const USD_TO_SGD = 1.35;
-        const orderAmountSGD = orderAmountUSD * USD_TO_SGD;
+        // Price configuration in SGD (unit price: SGD $0.27 ≈ USD $0.20)
+        const unitPriceSGD = 0.27;
+        const orderAmountSGD = qty * unitPriceSGD;
 
         // Check monthly limit
         const userStatus = checkAndResetMonthlySpending(req.user.id);
@@ -114,13 +109,19 @@ exports.createOrder = async (req, res) => {
             });
         }
         
+        // Razorpay uses USD - convert SGD to USD for payment (1 SGD ≈ 0.74 USD)
+        const SGD_TO_USD = 0.74;
+        const orderAmountUSD = orderAmountSGD * SGD_TO_USD;
+        const amountCents = Math.round(orderAmountUSD * 100);
+        
         const options = {
-            amount: Math.round(qty * unitPriceCents), // Amount in smallest currency unit
+            amount: amountCents, // Amount in smallest currency unit (cents)
             currency: 'USD',
             receipt: `receipt_${Date.now().toString().slice(-10)}_${req.user.id.slice(0, 5)}`,
             notes: {
                 userId: req.user.id,
-                quantity: qty.toString()
+                quantity: qty.toString(),
+                amountSGD: orderAmountSGD.toFixed(2)
             }
         };
 
@@ -149,14 +150,12 @@ exports.verifyPayment = async (req, res) => {
         if (generated_signature === razorpay_signature) {
              // Payment successful
              const qty = parseInt(quantity) || 1;
-             const unitPriceUSD = 0.20;
-             const costUSD = qty * unitPriceUSD;
              
-             // Convert to SGD for tracking
-             const USD_TO_SGD = 1.35;
-             const costSGD = costUSD * USD_TO_SGD;
+             // Price in SGD (unit price: SGD $0.27 ≈ USD $0.20)
+             const unitPriceSGD = 0.27;
+             const costSGD = qty * unitPriceSGD;
 
-             console.log(`Processing valid payment ${razorpay_payment_id} for user ${req.user.id}`);
+             console.log(`Processing valid payment ${razorpay_payment_id} for user ${req.user.id}, qty: ${qty}, cost: SGD ${costSGD}`);
              
              // Get current user data
              const currentUser = prepare('SELECT first_purchase_date FROM users WHERE id = ?').get(req.user.id);
@@ -165,7 +164,16 @@ exports.verifyPayment = async (req, res) => {
              let firstPurchaseDate = currentUser?.first_purchase_date || now;
              let purchaseResetDate = getNextMonthFirstDay(firstPurchaseDate);
 
-             // Update user with shields and monthly tracking
+             // Generate purchase ID
+             const purchaseId = `pur_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+             // Record individual purchase
+             prepare(`
+                INSERT INTO purchases (id, user_id, quantity, amount_sgd, razorpay_order_id, razorpay_payment_id, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)
+             `).run(purchaseId, req.user.id, qty, costSGD, razorpay_order_id, razorpay_payment_id, now);
+
+             // Update user with shields and monthly tracking (all in SGD)
              prepare(`
                 UPDATE users 
                 SET 
@@ -176,7 +184,7 @@ exports.verifyPayment = async (req, res) => {
                     first_purchase_date = COALESCE(first_purchase_date, ?),
                     purchase_reset_date = COALESCE(purchase_reset_date, ?)
                 WHERE id = ?
-            `).run(qty, qty, costUSD, costSGD, firstPurchaseDate, purchaseResetDate, req.user.id);
+            `).run(qty, qty, costSGD, costSGD, firstPurchaseDate, purchaseResetDate, req.user.id);
             
             saveDatabase();
             
@@ -223,6 +231,25 @@ exports.handleWebhook = async (req, res) => {
         }
     } catch (error) {
         console.error('Webhook Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Get purchase history for a specific user (admin endpoint)
+exports.getPurchaseHistory = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const purchases = prepare(`
+            SELECT id, quantity, amount_sgd, razorpay_order_id, razorpay_payment_id, status, created_at
+            FROM purchases 
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        `).all(userId);
+        
+        res.json({ purchases });
+    } catch (error) {
+        console.error('Get purchase history error:', error);
         res.status(500).json({ error: error.message });
     }
 };

@@ -154,6 +154,24 @@ async function initDatabase() {
         db.run(`ALTER TABLE users ADD COLUMN purchase_reset_date TEXT`);
     } catch (e) {}
 
+    // Create purchases table to track individual purchases
+    db.run(`
+        CREATE TABLE IF NOT EXISTS purchases (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            amount_sgd REAL NOT NULL,
+            razorpay_order_id TEXT,
+            razorpay_payment_id TEXT,
+            status TEXT DEFAULT 'completed',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `);
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_purchases_user ON purchases(user_id)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_purchases_created ON purchases(created_at DESC)`);
+
     // Create games table
     db.run(`
         CREATE TABLE IF NOT EXISTS games (
