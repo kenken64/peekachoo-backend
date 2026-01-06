@@ -56,9 +56,6 @@ exports.verifyPayment = async (req, res) => {
              const unitPrice = 0.20;
              const cost = qty * unitPrice;
 
-             // Ensure this payment hasn't been processed yet 
-             // (Ideally we should store payment_id in a payments table to prevent replay attacks)
-             // For now, allow it but log it.
              console.log(`Processing valid payment ${razorpay_payment_id} for user ${req.user.id}`);
              
              // Update user
@@ -81,6 +78,32 @@ exports.verifyPayment = async (req, res) => {
         }
     } catch (error) {
         console.error('Verify payment error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.handleWebhook = async (req, res) => {
+    try {
+        const secret = razorpayConfig.webhook_secret;
+        const signature = req.headers['x-razorpay-signature'];
+        
+        // Use rawBody if available (from app.js change), else JSONstringify body (fallback, unreliable)
+        const body = req.rawBody ? req.rawBody : JSON.stringify(req.body);
+
+        const isValid = Razorpay.validateWebhookSignature(body, signature, secret);
+
+        if (isValid) {
+            console.log('Webhook signature verified');
+            // Process event if needed
+            // const event = req.body.event;
+            
+            res.json({ status: 'ok' });
+        } else {
+            console.error('Invalid webhook signature');
+            res.status(400).json({ error: 'Invalid signature' });
+        }
+    } catch (error) {
+        console.error('Webhook Error:', error);
         res.status(500).json({ error: error.message });
     }
 };
