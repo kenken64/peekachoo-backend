@@ -444,21 +444,55 @@ exports.syncRazorpayPayments = async (req, res) => {
                 const totalShields = totals?.total_shields || 0;
                 const totalSpent = totals?.total_spent || 0;
 
-                // Get current shields balance
-                const currentUser = prepare('SELECT shields FROM users WHERE id = ?').get(userId);
+                // Get the first purchase date (earliest purchase)
+                const firstPurchase = prepare(`
+                    SELECT created_at FROM purchases 
+                    WHERE user_id = ? 
+                    ORDER BY created_at ASC 
+                    LIMIT 1
+                `).get(userId);
                 
-                // Update user totals (shields should be total purchased, not recalculated if consumed)
+                const firstPurchaseDate = firstPurchase?.created_at || new Date().toISOString();
+                const purchaseResetDate = getNextMonthFirstDay(firstPurchaseDate);
+
+                // Calculate monthly spent (purchases in current billing period)
+                const currentUser = prepare('SELECT purchase_reset_date FROM users WHERE id = ?').get(userId);
+                let periodStart = firstPurchaseDate;
+                
+                // If there's a reset date and it's passed, find the most recent reset period
+                if (currentUser?.purchase_reset_date) {
+                    const resetDate = new Date(currentUser.purchase_reset_date);
+                    const now = new Date();
+                    if (now >= resetDate) {
+                        // Reset date has passed, monthly_spent should be 0 (or only purchases after reset)
+                        periodStart = currentUser.purchase_reset_date;
+                    }
+                }
+
+                // Sum purchases in current period
+                const monthlyTotals = prepare(`
+                    SELECT SUM(amount_sgd) as monthly_spent
+                    FROM purchases 
+                    WHERE user_id = ? AND created_at >= ?
+                `).get(userId, periodStart);
+                
+                const monthlySpent = monthlyTotals?.monthly_spent || 0;
+
+                // Update user totals
                 prepare(`
                     UPDATE users 
                     SET 
                         total_shields_purchased = ?,
                         total_spent = ?,
-                        shields = ?
+                        shields = ?,
+                        monthly_spent = ?,
+                        first_purchase_date = ?,
+                        purchase_reset_date = ?
                     WHERE id = ?
-                `).run(totalShields, totalSpent, totalShields, userId);
+                `).run(totalShields, totalSpent, totalShields, monthlySpent, firstPurchaseDate, purchaseResetDate, userId);
 
                 results.usersRecalculated++;
-                console.log(`[Razorpay Sync] Recalculated user ${userId}: shields=${totalShields}, spent=${totalSpent}`);
+                console.log(`[Razorpay Sync] Recalculated user ${userId}: shields=${totalShields}, spent=${totalSpent}, monthly=${monthlySpent}, resetDate=${purchaseResetDate}`);
 
             } catch (e) {
                 console.error(`[Razorpay Sync] Error recalculating user ${userId}:`, e.message);
