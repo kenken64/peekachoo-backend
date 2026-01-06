@@ -10,8 +10,8 @@ module.exports = {
     origin: process.env.ORIGIN || 'http://localhost:3001',
     adminApiKey: process.env.ADMIN_API_KEY || 'peekachoo-admin-api-key-change-in-production',
     razorpay: {
-        key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_sg_hqvjt7HayPwnsJ',
-        key_secret: process.env.RAZORPAY_KEY_SECRET || 'KZ1ieslUpRRRsA4yaeASb8NV',
-        webhook_secret: process.env.RAZORPAY_WEBHOOK_SECRET || 'dd6725ae574bd42cf332ee2c2d769e3b294e83e779e8740019395ff15d3c6cfa'
+        key_id: process.env.RAZORPAY_KEY_ID || 'your_razorpay_key_id',
+        key_secret: process.env.RAZORPAY_KEY_SECRET || 'your_razorpay_key_secret',
+        webhook_secret: process.env.RAZORPAY_WEBHOOK_SECRET || 'your_razorpay_webhook_secret'
     }
 };
