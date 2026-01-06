@@ -11,6 +11,12 @@ const getUsers = async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const pageSize = parseInt(req.query.pageSize) || 30;
         const offset = (page - 1) * pageSize;
+        const sortBy = req.query.sortBy || 'created_at';
+        const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
+        
+        // Validate sortBy to prevent SQL injection
+        const allowedSortColumns = ['username', 'created_at', 'total_spent', 'shields', 'total_shields_purchased'];
+        const sortColumn = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
 
         // Get total count
         let countQuery = 'SELECT COUNT(*) as total FROM users';
@@ -22,7 +28,7 @@ const getUsers = async (req, res) => {
             dataQuery += whereClause;
         }
 
-        dataQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        dataQuery += ` ORDER BY ${sortColumn} ${sortOrder} LIMIT ? OFFSET ?`;
 
         // Execute count query
         const countStmt = db.prepare(countQuery);
