@@ -352,36 +352,19 @@ exports.syncRazorpayPayments = async (req, res) => {
 
         const affectedUserIds = new Set();
 
-        for (const payment of payments) {
+        for (const order of orders) {
             try {
-                // Only process captured (successful) payments
-                if (payment.status !== 'captured') {
+                // Only process paid orders
+                if (order.status !== 'paid') {
                     results.skipped++;
                     continue;
                 }
 
-                const paymentId = payment.id;
-                const orderId = payment.order_id;
-
-                // Check if this payment already exists
-                const existingPurchase = prepare(`
-                    SELECT id, quantity, amount_sgd FROM purchases WHERE razorpay_payment_id = ?
-                `).get(paymentId);
-
-                // Fetch the order to get notes (userId, quantity, amountSGD)
-                let order;
-                try {
-                    order = await razorpay.orders.fetch(orderId);
-                } catch (e) {
-                    console.error(`[Razorpay Sync] Failed to fetch order ${orderId}:`, e.message);
-                    results.errors.push(`Failed to fetch order ${orderId}`);
-                    continue;
-                }
-
+                const orderId = order.id;
                 const userId = order.notes?.userId;
                 const quantity = parseInt(order.notes?.quantity) || 1;
                 const amountSGD = parseFloat(order.notes?.amountSGD) || (quantity * 0.27);
-                const createdAt = new Date(payment.created_at * 1000).toISOString();
+                const createdAt = new Date(order.created_at * 1000).toISOString();
 
                 if (!userId) {
                     console.warn(`[Razorpay Sync] No userId in order ${orderId} notes, skipping`);
@@ -397,6 +380,26 @@ exports.syncRazorpayPayments = async (req, res) => {
                     continue;
                 }
 
+                // Get payment ID for this order (fetch payments for the order)
+                let paymentId = null;
+                try {
+                    const payments = await razorpay.orders.fetchPayments(orderId);
+                    if (payments.items && payments.items.length > 0) {
+                        // Get the first captured payment
+                        const capturedPayment = payments.items.find(p => p.status === 'captured');
+                        if (capturedPayment) {
+                            paymentId = capturedPayment.id;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[Razorpay Sync] Could not fetch payments for order ${orderId}:`, e.message);
+                }
+
+                // Check if this order already exists in purchases
+                const existingPurchase = prepare(`
+                    SELECT id, quantity, amount_sgd FROM purchases WHERE razorpay_order_id = ?
+                `).get(orderId);
+
                 affectedUserIds.add(userId);
 
                 if (existingPurchase) {
@@ -404,11 +407,11 @@ exports.syncRazorpayPayments = async (req, res) => {
                     if (existingPurchase.quantity !== quantity || Math.abs(existingPurchase.amount_sgd - amountSGD) > 0.01) {
                         prepare(`
                             UPDATE purchases 
-                            SET quantity = ?, amount_sgd = ?
-                            WHERE razorpay_payment_id = ?
-                        `).run(quantity, amountSGD, paymentId);
+                            SET quantity = ?, amount_sgd = ?, razorpay_payment_id = COALESCE(?, razorpay_payment_id)
+                            WHERE razorpay_order_id = ?
+                        `).run(quantity, amountSGD, paymentId, orderId);
                         results.updated++;
-                        console.log(`[Razorpay Sync] Updated purchase ${paymentId}: qty=${quantity}, amt=${amountSGD}`);
+                        console.log(`[Razorpay Sync] Updated purchase ${orderId}: qty=${quantity}, amt=${amountSGD}`);
                     } else {
                         results.skipped++;
                     }
@@ -424,8 +427,8 @@ exports.syncRazorpayPayments = async (req, res) => {
                 }
 
             } catch (e) {
-                console.error(`[Razorpay Sync] Error processing payment ${payment.id}:`, e.message);
-                results.errors.push(`Error processing ${payment.id}: ${e.message}`);
+                console.error(`[Razorpay Sync] Error processing order ${orderId}:`, e.message);
+                results.errors.push(`Error processing ${orderId}: ${e.message}`);
             }
         }
 
