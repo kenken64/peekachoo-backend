@@ -177,7 +177,8 @@ async function initDatabase() {
             amount_sgd REAL NOT NULL,
             razorpay_order_id TEXT,
             razorpay_payment_id TEXT,
-            status TEXT DEFAULT 'completed',
+            status TEXT DEFAULT 'captured',
+            settlement_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
@@ -185,6 +186,20 @@ async function initDatabase() {
 
     db.run(`CREATE INDEX IF NOT EXISTS idx_purchases_user ON purchases(user_id)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_purchases_created ON purchases(created_at DESC)`);
+
+    // Migration: Add settlement_id column to purchases if it doesn't exist
+    try {
+        db.run(`ALTER TABLE purchases ADD COLUMN settlement_id TEXT`);
+    } catch (e) {
+        // Column already exists
+    }
+
+    // Migration: Update default status from 'completed' to 'captured'
+    try {
+        db.run(`UPDATE purchases SET status = 'captured' WHERE status = 'completed'`);
+    } catch (e) {
+        // Ignore errors
+    }
 
     // Create games table
     db.run(`

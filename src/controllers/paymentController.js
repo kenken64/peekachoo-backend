@@ -422,7 +422,11 @@ exports.syncRazorpayPayments = async (req, res) => {
                 }
 
                 // Get payment ID for this order (fetch payments for the order)
+                // Get payment details for this order (fetch payments for the order)
                 let paymentId = null;
+                let paymentStatus = 'captured'; // Default to captured since order is paid
+                let settlementId = null;
+                
                 try {
                     const payments = await razorpay.orders.fetchPayments(orderId);
                     if (payments.items && payments.items.length > 0) {
@@ -430,6 +434,17 @@ exports.syncRazorpayPayments = async (req, res) => {
                         const capturedPayment = payments.items.find(p => p.status === 'captured');
                         if (capturedPayment) {
                             paymentId = capturedPayment.id;
+                            
+                            // Fetch full payment details to check settlement status
+                            try {
+                                const paymentDetails = await razorpay.payments.fetch(paymentId);
+                                if (paymentDetails.settlement_id) {
+                                    settlementId = paymentDetails.settlement_id;
+                                    paymentStatus = 'settled';
+                                }
+                            } catch (pErr) {
+                                console.warn(`[Razorpay Sync] Could not fetch payment details for ${paymentId}:`, pErr.message);
+                            }
                         }
                     }
                 } catch (e) {
@@ -438,22 +453,23 @@ exports.syncRazorpayPayments = async (req, res) => {
 
                 // Check if this order already exists in purchases
                 const existingPurchase = prepare(`
-                    SELECT id, quantity, amount_sgd FROM purchases WHERE razorpay_order_id = ?
+                    SELECT id, quantity, amount_sgd, status FROM purchases WHERE razorpay_order_id = ?
                 `).get(orderId);
 
                 affectedUserIds.add(userId);
 
                 if (existingPurchase) {
-                    // Always update to ensure created_at is correct
+                    // Always update to ensure created_at and status are correct
                     prepare(`
                         UPDATE purchases 
-                        SET quantity = ?, amount_sgd = ?, razorpay_payment_id = COALESCE(?, razorpay_payment_id), created_at = ?
+                        SET quantity = ?, amount_sgd = ?, razorpay_payment_id = COALESCE(?, razorpay_payment_id), 
+                            created_at = ?, status = ?, settlement_id = ?
                         WHERE razorpay_order_id = ?
-                    `).run(quantity, amountSGD, paymentId, createdAt, orderId);
+                    `).run(quantity, amountSGD, paymentId, createdAt, paymentStatus, settlementId, orderId);
                     
-                    if (existingPurchase.quantity !== quantity || Math.abs(existingPurchase.amount_sgd - amountSGD) > 0.01) {
+                    if (existingPurchase.quantity !== quantity || Math.abs(existingPurchase.amount_sgd - amountSGD) > 0.01 || existingPurchase.status !== paymentStatus) {
                         results.updated++;
-                        console.log(`[Razorpay Sync] Updated purchase ${orderId}: qty=${quantity}, amt=${amountSGD}, date=${createdAt}`);
+                        console.log(`[Razorpay Sync] Updated purchase ${orderId}: qty=${quantity}, amt=${amountSGD}, status=${paymentStatus}, settlement=${settlementId}`);
                     } else {
                         results.skipped++;
                     }
@@ -461,11 +477,11 @@ exports.syncRazorpayPayments = async (req, res) => {
                     // Create new purchase record
                     const purchaseId = `pur_sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                     prepare(`
-                        INSERT INTO purchases (id, user_id, quantity, amount_sgd, razorpay_order_id, razorpay_payment_id, status, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)
-                    `).run(purchaseId, userId, quantity, amountSGD, orderId, paymentId, createdAt);
+                        INSERT INTO purchases (id, user_id, quantity, amount_sgd, razorpay_order_id, razorpay_payment_id, status, settlement_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `).run(purchaseId, userId, quantity, amountSGD, orderId, paymentId, paymentStatus, settlementId, createdAt);
                     results.created++;
-                    console.log(`[Razorpay Sync] Created purchase ${paymentId}: user=${userId}, qty=${quantity}, amt=${amountSGD}`);
+                    console.log(`[Razorpay Sync] Created purchase ${paymentId}: user=${userId}, qty=${quantity}, amt=${amountSGD}, status=${paymentStatus}`);
                 }
 
             } catch (e) {
@@ -626,6 +642,7 @@ exports.getAllPayments = async (req, res) => {
                 p.razorpay_order_id,
                 p.razorpay_payment_id,
                 p.status,
+                p.settlement_id,
                 p.created_at
             FROM purchases p
             JOIN users u ON p.user_id = u.id
