@@ -14,7 +14,7 @@ const getUsers = async (req, res) => {
 
         // Get total count
         let countQuery = 'SELECT COUNT(*) as total FROM users';
-        let dataQuery = 'SELECT id, username, display_name, created_at, updated_at FROM users';
+        let dataQuery = 'SELECT id, username, display_name, created_at, updated_at, shields, total_shields_purchased, total_spent FROM users';
 
         if (search) {
             const whereClause = ' WHERE username LIKE ?';
@@ -49,12 +49,24 @@ const getUsers = async (req, res) => {
         }
         dataStmt.free();
 
+        // Get global stats
+        let statsQuery = 'SELECT SUM(total_shields_purchased) as totalShields, SUM(total_spent) as totalRevenue FROM users';
+        const statsStmt = db.prepare(statsQuery);
+        let globalStats = { totalShields: 0, totalRevenue: 0 };
+        if (statsStmt.step()) {
+             const result = statsStmt.getAsObject();
+             globalStats.totalShields = result.totalShields || 0;
+             globalStats.totalRevenue = result.totalRevenue || 0;
+        }
+        statsStmt.free();
+
         const totalPages = Math.ceil(total / pageSize);
 
         res.json({
             success: true,
             data: {
                 users,
+                globalStats,
                 pagination: {
                     total,
                     page,
@@ -77,7 +89,7 @@ const getUsers = async (req, res) => {
 const getUserById = async (req, res) => {
     try {
         const { id } = req.params;
-        const user = prepare('SELECT id, username, display_name, created_at, updated_at FROM users WHERE id = ?').get(id);
+        const user = prepare('SELECT id, username, display_name, created_at, updated_at, shields, total_shields_purchased, total_spent FROM users WHERE id = ?').get(id);
 
         if (!user) {
             return res.status(404).json({ success: false, error: 'User not found' });

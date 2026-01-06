@@ -393,8 +393,19 @@ exports.purchaseShield = async (req, res) => {
             return res.status(400).json({ error: 'Invalid quantity' });
         }
 
-        // Update user shields
-        prepare('UPDATE users SET shields = COALESCE(shields, 0) + ? WHERE id = ?').run(qty, req.user.id);
+        const unitPrice = 0.20;
+        const cost = qty * unitPrice;
+
+        // Update user shields and purchase stats
+        prepare(`
+            UPDATE users 
+            SET 
+                shields = COALESCE(shields, 0) + ?,
+                total_shields_purchased = COALESCE(total_shields_purchased, 0) + ?,
+                total_spent = COALESCE(total_spent, 0) + ?
+            WHERE id = ?
+        `).run(qty, qty, cost, req.user.id);
+        
         saveDatabase();
 
         const user = prepare('SELECT shields FROM users WHERE id = ?').get(req.user.id);

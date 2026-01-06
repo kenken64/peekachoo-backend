@@ -113,6 +113,15 @@ async function initDatabase() {
         // Column likely already exists, ignore error
     }
 
+    // Migration: Add total_shields_purchased and total_spent to users
+    try {
+        db.run(`ALTER TABLE users ADD COLUMN total_shields_purchased INTEGER DEFAULT 0`);
+    } catch (e) {}
+
+    try {
+        db.run(`ALTER TABLE users ADD COLUMN total_spent REAL DEFAULT 0.0`);
+    } catch (e) {}
+
     // Create games table
     db.run(`
         CREATE TABLE IF NOT EXISTS games (
