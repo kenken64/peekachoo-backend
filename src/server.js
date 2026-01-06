@@ -12,39 +12,39 @@ const websocketService = require('./services/websocketService');
 
 // Initialize database and start server
 async function start() {
+    let server;
     try {
         console.log('Starting initialization...');
+
+        // Create HTTP server immediately to satisfy health checks
+        server = http.createServer(app);
+
+        // Start server - bind to 0.0.0.0 for Docker compatibility
+        // We start listening BEFORE DB init so the container appears "healthy" to the platform
+        // even if DB takes a moment to load.
+        console.log(`Attempting to bind server to port ${port}...`);
+        await new Promise((resolve, reject) => {
+            server.listen(port, '0.0.0.0', () => {
+                console.log(`Server is running on http://0.0.0.0:${port}`);
+                console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+                resolve();
+            });
+            server.on('error', reject);
+        });
         
         // Initialize SQLite database
         console.log('Initializing database...');
         await initDatabase();
         console.log('Database initialized successfully');
 
-        // Create HTTP server
-        const server = http.createServer(app);
-
         // Initialize WebSocket server
         console.log('Initializing WebSocket service...');
         websocketService.initialize(server);
+        console.log(`WebSocket available at ws://0.0.0.0:${port}/ws`);
 
-        // Start server - bind to 0.0.0.0 for Docker compatibility
-        console.log(`Attempting to bind server to port ${port}...`);
-        server.listen(port, '0.0.0.0', () => {
-            console.log(`Server is running on http://0.0.0.0:${port}`);
-            console.log(`WebSocket available at ws://0.0.0.0:${port}/ws`);
-            console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-        });
-
-        // Handle error events on the server
+        // Handle separate error events after startup
         server.on('error', (e) => {
             console.error('Server error:', e);
-            if (e.code === 'EADDRINUSE') {
-                console.error('Address in use, retrying...');
-                setTimeout(() => {
-                    server.close();
-                    server.listen(port, '0.0.0.0');
-                }, 1000);
-            }
         });
 
         // Handle graceful shutdown
@@ -68,6 +68,7 @@ async function start() {
     } catch (error) {
         console.error('Fatal error during startup:', error);
         console.error(error.stack);
+        if (server) server.close();
         process.exit(1);
     }
 }
