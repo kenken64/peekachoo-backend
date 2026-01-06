@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { prepare, saveDatabase } = require('../config/sqlite');
 const { razorpay: razorpayConfig } = require('../config/config');
 
-// Monthly spending limit in SGD
+// Monthly spending limit in SGD - v2.1 sync fix
 const MONTHLY_LIMIT_SGD = 50.00;
 
 let razorpay = null;
