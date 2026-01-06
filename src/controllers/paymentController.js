@@ -433,6 +433,12 @@ exports.syncRazorpayPayments = async (req, res) => {
             }
         }
 
+        // Get ALL users who have purchases (not just affected by this sync)
+        const usersWithPurchases = prepare(`SELECT DISTINCT user_id FROM purchases`).all();
+        for (const row of usersWithPurchases) {
+            affectedUserIds.add(row.user_id);
+        }
+
         // Recalculate totals for affected users
         for (const userId of affectedUserIds) {
             try {
