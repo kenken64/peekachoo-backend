@@ -456,30 +456,23 @@ exports.syncRazorpayPayments = async (req, res) => {
                 `).get(userId);
                 
                 const firstPurchaseDate = firstPurchase?.created_at || new Date().toISOString();
-                const purchaseResetDate = getNextMonthFirstDay(firstPurchaseDate);
-
-                // Calculate monthly spent (purchases in current billing period)
-                const currentUser = prepare('SELECT purchase_reset_date FROM users WHERE id = ?').get(userId);
-                let periodStart = firstPurchaseDate;
                 
-                // If there's a reset date and it's passed, find the most recent reset period
-                if (currentUser?.purchase_reset_date) {
-                    const resetDate = new Date(currentUser.purchase_reset_date);
-                    const now = new Date();
-                    if (now >= resetDate) {
-                        // Reset date has passed, monthly_spent should be 0 (or only purchases after reset)
-                        periodStart = currentUser.purchase_reset_date;
-                    }
-                }
-
-                // Sum purchases in current period
+                // Calculate monthly spent based on CURRENT CALENDAR MONTH
+                const now = new Date();
+                const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+                const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+                
+                // Sum purchases in current calendar month
                 const monthlyTotals = prepare(`
                     SELECT SUM(amount_sgd) as monthly_spent
                     FROM purchases 
-                    WHERE user_id = ? AND created_at >= ?
-                `).get(userId, periodStart);
+                    WHERE user_id = ? AND created_at >= ? AND created_at < ?
+                `).get(userId, currentMonthStart, nextMonthStart);
                 
                 const monthlySpent = monthlyTotals?.monthly_spent || 0;
+                
+                // Reset date is the first day of next month
+                const purchaseResetDate = nextMonthStart;
 
                 // Update user totals
                 prepare(`
