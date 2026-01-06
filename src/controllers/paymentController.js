@@ -285,3 +285,179 @@ exports.getPurchaseHistory = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// Sync payments from Razorpay (admin endpoint)
+exports.syncRazorpayPayments = async (req, res) => {
+    if (!razorpay) {
+        return res.status(503).json({ error: 'Razorpay not configured' });
+    }
+
+    try {
+        console.log('[Razorpay Sync] Starting sync...');
+        
+        const results = {
+            fetched: 0,
+            created: 0,
+            updated: 0,
+            skipped: 0,
+            errors: [],
+            usersRecalculated: 0
+        };
+
+        // Fetch all payments from Razorpay (last 30 days by default)
+        const thirtyDaysAgo = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
+        
+        let payments = [];
+        let skip = 0;
+        const count = 100;
+        
+        // Paginate through all payments
+        while (true) {
+            const batch = await razorpay.payments.all({
+                from: thirtyDaysAgo,
+                count: count,
+                skip: skip
+            });
+            
+            if (!batch.items || batch.items.length === 0) break;
+            
+            payments = payments.concat(batch.items);
+            skip += batch.items.length;
+            
+            if (batch.items.length < count) break;
+        }
+        
+        results.fetched = payments.length;
+        console.log(`[Razorpay Sync] Fetched ${payments.length} payments from Razorpay`);
+
+        const affectedUserIds = new Set();
+
+        for (const payment of payments) {
+            try {
+                // Only process captured (successful) payments
+                if (payment.status !== 'captured') {
+                    results.skipped++;
+                    continue;
+                }
+
+                const paymentId = payment.id;
+                const orderId = payment.order_id;
+
+                // Check if this payment already exists
+                const existingPurchase = prepare(`
+                    SELECT id, quantity, amount_sgd FROM purchases WHERE razorpay_payment_id = ?
+                `).get(paymentId);
+
+                // Fetch the order to get notes (userId, quantity, amountSGD)
+                let order;
+                try {
+                    order = await razorpay.orders.fetch(orderId);
+                } catch (e) {
+                    console.error(`[Razorpay Sync] Failed to fetch order ${orderId}:`, e.message);
+                    results.errors.push(`Failed to fetch order ${orderId}`);
+                    continue;
+                }
+
+                const userId = order.notes?.userId;
+                const quantity = parseInt(order.notes?.quantity) || 1;
+                const amountSGD = parseFloat(order.notes?.amountSGD) || (quantity * 0.27);
+                const createdAt = new Date(payment.created_at * 1000).toISOString();
+
+                if (!userId) {
+                    console.warn(`[Razorpay Sync] No userId in order ${orderId} notes, skipping`);
+                    results.skipped++;
+                    continue;
+                }
+
+                // Check if user exists
+                const user = prepare('SELECT id FROM users WHERE id = ?').get(userId);
+                if (!user) {
+                    console.warn(`[Razorpay Sync] User ${userId} not found, skipping`);
+                    results.skipped++;
+                    continue;
+                }
+
+                affectedUserIds.add(userId);
+
+                if (existingPurchase) {
+                    // Update if quantity or amount is different
+                    if (existingPurchase.quantity !== quantity || Math.abs(existingPurchase.amount_sgd - amountSGD) > 0.01) {
+                        prepare(`
+                            UPDATE purchases 
+                            SET quantity = ?, amount_sgd = ?
+                            WHERE razorpay_payment_id = ?
+                        `).run(quantity, amountSGD, paymentId);
+                        results.updated++;
+                        console.log(`[Razorpay Sync] Updated purchase ${paymentId}: qty=${quantity}, amt=${amountSGD}`);
+                    } else {
+                        results.skipped++;
+                    }
+                } else {
+                    // Create new purchase record
+                    const purchaseId = `pur_sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    prepare(`
+                        INSERT INTO purchases (id, user_id, quantity, amount_sgd, razorpay_order_id, razorpay_payment_id, status, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)
+                    `).run(purchaseId, userId, quantity, amountSGD, orderId, paymentId, createdAt);
+                    results.created++;
+                    console.log(`[Razorpay Sync] Created purchase ${paymentId}: user=${userId}, qty=${quantity}, amt=${amountSGD}`);
+                }
+
+            } catch (e) {
+                console.error(`[Razorpay Sync] Error processing payment ${payment.id}:`, e.message);
+                results.errors.push(`Error processing ${payment.id}: ${e.message}`);
+            }
+        }
+
+        // Recalculate totals for affected users
+        for (const userId of affectedUserIds) {
+            try {
+                // Sum all purchases for this user
+                const totals = prepare(`
+                    SELECT 
+                        SUM(quantity) as total_shields,
+                        SUM(amount_sgd) as total_spent
+                    FROM purchases 
+                    WHERE user_id = ?
+                `).get(userId);
+
+                const totalShields = totals?.total_shields || 0;
+                const totalSpent = totals?.total_spent || 0;
+
+                // Get current shields balance
+                const currentUser = prepare('SELECT shields FROM users WHERE id = ?').get(userId);
+                
+                // Update user totals (shields should be total purchased, not recalculated if consumed)
+                prepare(`
+                    UPDATE users 
+                    SET 
+                        total_shields_purchased = ?,
+                        total_spent = ?,
+                        shields = ?
+                    WHERE id = ?
+                `).run(totalShields, totalSpent, totalShields, userId);
+
+                results.usersRecalculated++;
+                console.log(`[Razorpay Sync] Recalculated user ${userId}: shields=${totalShields}, spent=${totalSpent}`);
+
+            } catch (e) {
+                console.error(`[Razorpay Sync] Error recalculating user ${userId}:`, e.message);
+                results.errors.push(`Error recalculating user ${userId}: ${e.message}`);
+            }
+        }
+
+        saveDatabase();
+
+        console.log(`[Razorpay Sync] Complete: fetched=${results.fetched}, created=${results.created}, updated=${results.updated}, skipped=${results.skipped}, usersRecalculated=${results.usersRecalculated}`);
+
+        res.json({
+            success: true,
+            message: 'Sync completed',
+            results
+        });
+
+    } catch (error) {
+        console.error('[Razorpay Sync] Fatal error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};

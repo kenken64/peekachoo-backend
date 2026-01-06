@@ -26,4 +26,7 @@ router.delete('/users/:id', adminController.deleteUser);
 // POST /api/admin/pokemon/sync - Sync Pokemon database
 router.post('/pokemon/sync', pokemonController.syncPokemon);
 
+// POST /api/admin/payments/sync - Sync payments from Razorpay
+router.post('/payments/sync', paymentController.syncRazorpayPayments);
+
 module.exports = router;
