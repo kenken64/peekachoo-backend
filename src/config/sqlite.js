@@ -154,6 +154,20 @@ async function initDatabase() {
         db.run(`ALTER TABLE users ADD COLUMN purchase_reset_date TEXT`);
     } catch (e) {}
 
+    // Migration: Backfill first_purchase_date and purchase_reset_date for users with purchases
+    try {
+        // For users with total_spent > 0 but no first_purchase_date, set it to their created_at
+        db.run(`
+            UPDATE users 
+            SET first_purchase_date = created_at
+            WHERE total_spent > 0 
+            AND (first_purchase_date IS NULL OR first_purchase_date = '')
+        `);
+        console.log('[SQLite Migration] Backfilled first_purchase_date for existing purchasers');
+    } catch (e) {
+        console.error('[SQLite Migration] Failed to backfill first_purchase_date:', e);
+    }
+
     // Create purchases table to track individual purchases
     db.run(`
         CREATE TABLE IF NOT EXISTS purchases (

@@ -63,13 +63,22 @@ exports.checkPurchaseStatus = async (req, res) => {
         const remainingAllowance = Math.max(0, MONTHLY_LIMIT_SGD - monthlySpent);
         const canPurchase = remainingAllowance > 0;
 
+        // Calculate reset date if we have a first purchase date but no reset date
+        let purchaseResetDate = userStatus.purchase_reset_date;
+        if (userStatus.first_purchase_date && !purchaseResetDate) {
+            purchaseResetDate = getNextMonthFirstDay(userStatus.first_purchase_date);
+            // Update the database with the calculated reset date
+            prepare(`UPDATE users SET purchase_reset_date = ? WHERE id = ?`).run(purchaseResetDate, req.user.id);
+            saveDatabase();
+        }
+
         res.json({
             canPurchase,
             monthlySpent,
             monthlyLimit: MONTHLY_LIMIT_SGD,
             remainingAllowance,
             firstPurchaseDate: userStatus.first_purchase_date,
-            purchaseResetDate: userStatus.purchase_reset_date
+            purchaseResetDate: purchaseResetDate
         });
     } catch (error) {
         console.error('Check purchase status error:', error);
@@ -158,11 +167,19 @@ exports.verifyPayment = async (req, res) => {
              console.log(`Processing valid payment ${razorpay_payment_id} for user ${req.user.id}, qty: ${qty}, cost: SGD ${costSGD}`);
              
              // Get current user data
-             const currentUser = prepare('SELECT first_purchase_date FROM users WHERE id = ?').get(req.user.id);
+             const currentUser = prepare('SELECT first_purchase_date, purchase_reset_date FROM users WHERE id = ?').get(req.user.id);
              
              const now = new Date().toISOString();
-             let firstPurchaseDate = currentUser?.first_purchase_date || now;
-             let purchaseResetDate = getNextMonthFirstDay(firstPurchaseDate);
+             
+             // Always set first_purchase_date if not already set (check for null, undefined, or empty string)
+             const firstPurchaseDate = (currentUser?.first_purchase_date && currentUser.first_purchase_date.length > 0) 
+                 ? currentUser.first_purchase_date 
+                 : now;
+             
+             // Calculate reset date (first day of next month from first purchase)
+             const purchaseResetDate = getNextMonthFirstDay(firstPurchaseDate);
+             
+             console.log(`Setting first_purchase_date: ${firstPurchaseDate}, purchase_reset_date: ${purchaseResetDate}`);
 
              // Generate purchase ID
              const purchaseId = `pur_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -174,6 +191,7 @@ exports.verifyPayment = async (req, res) => {
              `).run(purchaseId, req.user.id, qty, costSGD, razorpay_order_id, razorpay_payment_id, now);
 
              // Update user with shields and monthly tracking (all in SGD)
+             // Always set first_purchase_date and purchase_reset_date explicitly
              prepare(`
                 UPDATE users 
                 SET 
@@ -181,8 +199,8 @@ exports.verifyPayment = async (req, res) => {
                     total_shields_purchased = COALESCE(total_shields_purchased, 0) + ?,
                     total_spent = COALESCE(total_spent, 0) + ?,
                     monthly_spent = COALESCE(monthly_spent, 0) + ?,
-                    first_purchase_date = COALESCE(first_purchase_date, ?),
-                    purchase_reset_date = COALESCE(purchase_reset_date, ?)
+                    first_purchase_date = ?,
+                    purchase_reset_date = ?
                 WHERE id = ?
             `).run(qty, qty, costSGD, costSGD, firstPurchaseDate, purchaseResetDate, req.user.id);
             
