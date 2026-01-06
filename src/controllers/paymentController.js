@@ -1,14 +1,16 @@
-const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const { prepare, saveDatabase } = require('../config/sqlite');
 const { razorpay: razorpayConfig } = require('../config/config');
 
-let razorpay;
+let razorpay = null;
+let RazorpayClass = null;
 try {
-    razorpay = new Razorpay({
+    RazorpayClass = require('razorpay');
+    razorpay = new RazorpayClass({
         key_id: razorpayConfig.key_id,
         key_secret: razorpayConfig.key_secret
     });
+    console.log('Razorpay initialized successfully');
 } catch (error) {
     console.error('Failed to initialize Razorpay:', error.message);
     // Do not crash, just log. createOrder will fail if called.
@@ -93,13 +95,16 @@ exports.verifyPayment = async (req, res) => {
 
 exports.handleWebhook = async (req, res) => {
     try {
+        if (!RazorpayClass) {
+            return res.status(503).json({ error: 'Payment service unavailable' });
+        }
         const secret = razorpayConfig.webhook_secret;
         const signature = req.headers['x-razorpay-signature'];
         
         // Use rawBody if available (from app.js change), else JSONstringify body (fallback, unreliable)
         const body = req.rawBody ? req.rawBody : JSON.stringify(req.body);
 
-        const isValid = Razorpay.validateWebhookSignature(body, signature, secret);
+        const isValid = RazorpayClass.validateWebhookSignature(body, signature, secret);
 
         if (isValid) {
             console.log('Webhook signature verified');
