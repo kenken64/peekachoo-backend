@@ -123,12 +123,17 @@ exports.createOrder = async (req, res) => {
         const orderAmountUSD = orderAmountSGD * SGD_TO_USD;
         const amountCents = Math.round(orderAmountUSD * 100);
         
+        // Get username for Razorpay notes
+        const userInfo = prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
+        const username = userInfo?.username || 'Unknown';
+        
         const options = {
             amount: amountCents, // Amount in smallest currency unit (cents)
             currency: 'USD',
             receipt: `receipt_${Date.now().toString().slice(-10)}_${req.user.id.slice(0, 5)}`,
             notes: {
                 userId: req.user.id,
+                username: username,
                 quantity: qty.toString(),
                 amountSGD: orderAmountSGD.toFixed(2)
             }
