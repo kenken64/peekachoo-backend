@@ -575,3 +575,73 @@ exports.syncRazorpayPayments = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// Get all payments with pagination and filters (admin endpoint)
+exports.getAllPayments = async (req, res) => {
+    try {
+        const { search = '', status = 'all', page = 1, pageSize = 50 } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(pageSize);
+        const limit = parseInt(pageSize);
+
+        // Build WHERE clause
+        let whereClause = '1=1';
+        const params = [];
+
+        if (search) {
+            whereClause += ` AND (u.username LIKE ? OR p.razorpay_order_id LIKE ? OR p.razorpay_payment_id LIKE ?)`;
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+        }
+
+        if (status && status !== 'all') {
+            whereClause += ` AND p.status = ?`;
+            params.push(status);
+        }
+
+        // Get total count
+        const countResult = prepare(`
+            SELECT COUNT(*) as total
+            FROM purchases p
+            JOIN users u ON p.user_id = u.id
+            WHERE ${whereClause}
+        `).get(...params);
+        const totalCount = countResult?.total || 0;
+
+        // Get total revenue
+        const revenueResult = prepare(`
+            SELECT SUM(amount_sgd) as total_revenue
+            FROM purchases p
+            JOIN users u ON p.user_id = u.id
+            WHERE ${whereClause}
+        `).get(...params);
+        const totalRevenue = revenueResult?.total_revenue || 0;
+
+        // Get paginated payments
+        const payments = prepare(`
+            SELECT 
+                p.id,
+                p.user_id,
+                u.username,
+                p.quantity,
+                p.amount_sgd,
+                p.razorpay_order_id,
+                p.razorpay_payment_id,
+                p.status,
+                p.created_at
+            FROM purchases p
+            JOIN users u ON p.user_id = u.id
+            WHERE ${whereClause}
+            ORDER BY p.created_at DESC
+            LIMIT ? OFFSET ?
+        `).all(...params, limit, offset);
+
+        res.json({
+            payments,
+            totalCount,
+            totalPages: Math.ceil(totalCount / limit),
+            totalRevenue
+        });
+    } catch (error) {
+        console.error('Get all payments error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};

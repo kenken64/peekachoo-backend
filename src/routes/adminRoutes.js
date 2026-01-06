@@ -32,4 +32,7 @@ router.post('/payments/sync', paymentController.syncRazorpayPayments);
 // GET /api/admin/payments/debug - Debug endpoint for sync issues
 router.get('/payments/debug', paymentController.debugSyncData);
 
+// GET /api/admin/payments - Get all payments with pagination and filters
+router.get('/payments', paymentController.getAllPayments);
+
 module.exports = router;
