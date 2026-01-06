@@ -1,4 +1,5 @@
 # Use Node.js LTS version
+# Build: 2026-01-07-v2
 FROM node:18-alpine
 
 # Set working directory
