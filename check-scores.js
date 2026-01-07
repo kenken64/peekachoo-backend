@@ -1,10 +1,10 @@
-const { initDatabase, prepare } = require('./src/config/sqlite');
+const { initDatabase, prepare } = require("./src/config/sqlite");
 
 async function check() {
-    await initDatabase();
+	await initDatabase();
 
-    // Get recent sessions with game names
-    const sessions = prepare(`
+	// Get recent sessions with game names
+	const sessions = prepare(`
         SELECT
             gs.id,
             gs.total_score,
@@ -21,13 +21,15 @@ async function check() {
         LIMIT 10
     `).all();
 
-    console.log('=== Recent Game Sessions ===');
-    sessions.forEach(s => {
-        console.log(`Game: ${s.game_name || 'Classic'} | Score: ${s.total_score} | Levels: ${s.levels_completed} | User: ${s.username} | Time: ${s.started_at}`);
-    });
+	console.log("=== Recent Game Sessions ===");
+	sessions.forEach((s) => {
+		console.log(
+			`Game: ${s.game_name || "Classic"} | Score: ${s.total_score} | Levels: ${s.levels_completed} | User: ${s.username} | Time: ${s.started_at}`,
+		);
+	});
 
-    // Get recent scores
-    const scores = prepare(`
+	// Get recent scores
+	const scores = prepare(`
         SELECT
             ps.level,
             ps.total_score,
@@ -39,17 +41,21 @@ async function check() {
         LIMIT 15
     `).all();
 
-    console.log('\n=== Recent Player Scores ===');
-    scores.forEach(s => {
-        console.log(`Level ${s.level} | Score: ${s.total_score} | Pokemon: ${s.pokemon_name} | Session: ${s.session_id.substring(0,8)}...`);
-    });
+	console.log("\n=== Recent Player Scores ===");
+	scores.forEach((s) => {
+		console.log(
+			`Level ${s.level} | Score: ${s.total_score} | Pokemon: ${s.pokemon_name} | Session: ${s.session_id.substring(0, 8)}...`,
+		);
+	});
 
-    // Check player stats
-    const stats = prepare(`SELECT * FROM player_stats`).all();
-    console.log('\n=== Player Stats ===');
-    stats.forEach(s => {
-        console.log(`User: ${s.user_id.substring(0,8)}... | Total Score: ${s.total_score_all_time} | Levels: ${s.total_levels_completed} | Games: ${s.total_games_played}`);
-    });
+	// Check player stats
+	const stats = prepare(`SELECT * FROM player_stats`).all();
+	console.log("\n=== Player Stats ===");
+	stats.forEach((s) => {
+		console.log(
+			`User: ${s.user_id.substring(0, 8)}... | Total Score: ${s.total_score_all_time} | Levels: ${s.total_levels_completed} | Games: ${s.total_games_played}`,
+		);
+	});
 }
 
 check().catch(console.error);

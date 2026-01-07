@@ -1,38 +1,38 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const { adminApiKeyAuth } = require('../middlewares/authMiddleware');
-const adminController = require('../controllers/adminController');
-const pokemonController = require('../controllers/pokemonController');
-const paymentController = require('../controllers/paymentController');
+const { adminApiKeyAuth } = require("../middlewares/authMiddleware");
+const adminController = require("../controllers/adminController");
+const pokemonController = require("../controllers/pokemonController");
+const paymentController = require("../controllers/paymentController");
 
 // All admin routes are protected by API key
 router.use(adminApiKeyAuth);
 
 // GET /api/admin/users - Get all users with pagination and search
-router.get('/users', adminController.getUsers);
+router.get("/users", adminController.getUsers);
 
 // GET /api/admin/users/count - Get total user count
-router.get('/users/count', adminController.getUserCount);
+router.get("/users/count", adminController.getUserCount);
 
 // GET /api/admin/users/:id - Get user by ID
-router.get('/users/:id', adminController.getUserById);
+router.get("/users/:id", adminController.getUserById);
 
 // GET /api/admin/users/:id/purchases - Get user's purchase history
-router.get('/users/:userId/purchases', paymentController.getPurchaseHistory);
+router.get("/users/:userId/purchases", paymentController.getPurchaseHistory);
 
 // DELETE /api/admin/users/:id - Delete user by ID
-router.delete('/users/:id', adminController.deleteUser);
+router.delete("/users/:id", adminController.deleteUser);
 
 // POST /api/admin/pokemon/sync - Sync Pokemon database
-router.post('/pokemon/sync', pokemonController.syncPokemon);
+router.post("/pokemon/sync", pokemonController.syncPokemon);
 
 // POST /api/admin/payments/sync - Sync payments from Razorpay
-router.post('/payments/sync', paymentController.syncRazorpayPayments);
+router.post("/payments/sync", paymentController.syncRazorpayPayments);
 
 // GET /api/admin/payments/debug - Debug endpoint for sync issues
-router.get('/payments/debug', paymentController.debugSyncData);
+router.get("/payments/debug", paymentController.debugSyncData);
 
 // GET /api/admin/payments - Get all payments with pagination and filters
-router.get('/payments', paymentController.getAllPayments);
+router.get("/payments", paymentController.getAllPayments);
 
 module.exports = router;

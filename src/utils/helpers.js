@@ -6,10 +6,10 @@
  * @returns {object} Formatted response object
  */
 exports.formatResponse = (success, data, message = null) => {
-    const response = { success };
-    if (data) response.data = data;
-    if (message) response.message = message;
-    return response;
+	const response = { success };
+	if (data) response.data = data;
+	if (message) response.message = message;
+	return response;
 };
 
 /**
@@ -19,9 +19,9 @@ exports.formatResponse = (success, data, message = null) => {
  * @returns {Error} Error object with status
  */
 exports.createError = (message, status = 500) => {
-    const error = new Error(message);
-    error.status = status;
-    return error;
+	const error = new Error(message);
+	error.status = status;
+	return error;
 };
 
 /**
@@ -30,5 +30,5 @@ exports.createError = (message, status = 500) => {
  * @returns {Function} Express middleware function
  */
 exports.asyncHandler = (fn) => (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
+	Promise.resolve(fn(req, res, next)).catch(next);
 };
