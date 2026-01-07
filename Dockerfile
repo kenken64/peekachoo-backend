@@ -1,11 +1,24 @@
-# Simple single-stage Dockerfile
-# Build: 2026-01-07-v6
-FROM node:18-alpine
+# Build stage
+# Build: 2026-01-07-v7
+FROM node:18-alpine AS builder
 
 # Install required packages for native modules
 RUN apk add --no-cache python3 make g++
 
-# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies
+RUN npm ci
+
+# Copy application source
+COPY . .
+
+# Production stage
+FROM node:18-alpine AS runner
+
 WORKDIR /app
 
 # Accept build arguments from Railway
@@ -36,20 +49,23 @@ ENV RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
 ENV RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
 ENV RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
 
-# Copy package files
-COPY package*.json ./
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 appuser
 
-# Install production dependencies only
-RUN npm ci --only=production
+# Copy built application from builder stage
+COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=appuser:nodejs /app/src ./src
+COPY --from=builder --chown=appuser:nodejs /app/package.json ./
 
-# Copy application source
-COPY src ./src
+# Create data directory for SQLite database with proper permissions
+RUN mkdir -p /app/data && chown -R appuser:nodejs /app/data
 
-# Create data directory for SQLite database
-RUN mkdir -p data
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 3000
 
-# Start the application
+# Start the application directly with node (not npm, since we're running as non-root)
 CMD ["node", "src/server.js"]
