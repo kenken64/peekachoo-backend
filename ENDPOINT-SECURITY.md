@@ -2,28 +2,43 @@
 
 This document outlines the authentication requirements for all backend API endpoints.
 
+**Last Updated:** January 8, 2026
+
 ## Authentication Methods
 
 | Method | Description | Header |
 |--------|-------------|--------|
 | **None** | Public endpoint, no authentication required | - |
-| **JWT Token** | Requires valid JWT token from login | `Authorization: Bearer <token>` |
+| **JWT Token** | Requires valid JWT token from passkey login | `Authorization: Bearer <token>` |
 | **API Key** | Requires admin API key | `X-API-Key: <api_key>` |
+| **Webhook** | Razorpay signature verification | `x-razorpay-signature` |
 
 ---
 
 ## 🔓 Public Endpoints (No Authentication Required)
 
+### Root API (`/api`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api` | API welcome message and endpoint listing |
+
 ### Auth Routes (`/api/auth`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/auth/config` | WebAuthn configuration |
+| GET | `/api/auth/config` | WebAuthn configuration (rpName, rpID, origin) |
 | GET | `/api/auth/check-username/:username` | Check if username exists |
 | POST | `/api/auth/register/start` | Start passkey registration |
 | POST | `/api/auth/register/complete` | Complete passkey registration |
 | POST | `/api/auth/login/start` | Start passkey login |
 | POST | `/api/auth/login/complete` | Complete passkey login |
+
+### Payment Webhook (`/api/payment`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/payment/webhook` | Razorpay webhook (signature verified) |
 
 ---
 
@@ -39,6 +54,16 @@ Authorization: Bearer <jwt_token>
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/auth/me` | Get current authenticated user |
+| POST | `/api/auth/purchase-shield` | Purchase a shield item |
+| POST | `/api/auth/consume-shield` | Consume a shield item |
+
+### Payment Routes (`/api/payment`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/payment/purchase-status` | Check user's purchase status |
+| POST | `/api/payment/create-order` | Create Razorpay payment order |
+| POST | `/api/payment/verify-payment` | Verify payment completion |
 
 ### Leaderboard Routes (`/api/leaderboard`)
 
@@ -94,7 +119,8 @@ Authorization: Bearer <jwt_token>
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/pokemon/sync` | Sync Pokemon from PokeAPI |
+| POST | `/api/pokemon/sync` | Sync Pokemon from PokeAPI GraphQL |
+| GET | `/api/pokemon/random-unrevealed` | Get random unrevealed Pokemon for endless mode |
 | GET | `/api/pokemon` | Get all Pokemon |
 | GET | `/api/pokemon/search` | Search Pokemon by name |
 | GET | `/api/pokemon/type/:type` | Get Pokemon by type |
@@ -125,7 +151,12 @@ X-API-Key: <admin_api_key>
 | GET | `/api/admin/users` | Get all users (with pagination & search) |
 | GET | `/api/admin/users/count` | Get total user count |
 | GET | `/api/admin/users/:id` | Get user by ID |
+| GET | `/api/admin/users/:userId/purchases` | Get user's purchase history |
 | DELETE | `/api/admin/users/:id` | Delete user by ID |
+| POST | `/api/admin/pokemon/sync` | Sync Pokemon database |
+| POST | `/api/admin/payments/sync` | Sync payments from Razorpay |
+| GET | `/api/admin/payments/debug` | Debug endpoint for sync issues |
+| GET | `/api/admin/payments` | Get all payments (pagination & filters) |
 
 ---
 
@@ -133,7 +164,7 @@ X-API-Key: <admin_api_key>
 
 ### `authMiddleware`
 - Validates JWT token from `Authorization` header
-- Sets `req.user` with decoded token payload
+- Sets `req.user` with decoded token payload (userId, username)
 - Returns 401 if token missing, expired, or invalid
 
 ### `optionalAuth`
@@ -145,6 +176,19 @@ X-API-Key: <admin_api_key>
 - Validates API key from `X-API-Key` header
 - Compares against configured `ADMIN_API_KEY` environment variable
 - Returns 401 if key missing, 403 if invalid
+
+---
+
+## Security Summary
+
+| Category | Count | Protection |
+|----------|-------|------------|
+| Public Endpoints | 8 | None (intentionally public) |
+| JWT Protected | 35 | User authentication required |
+| Admin Protected | 9 | API key required |
+| Webhook | 1 | Razorpay signature verification |
+
+**Total Endpoints:** 53
 
 ---
 
