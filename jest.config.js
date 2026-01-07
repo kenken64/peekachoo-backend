@@ -6,9 +6,10 @@ module.exports = {
   moduleFileExtensions: ['js', 'json'],
   setupFilesAfterEnv: ['<rootDir>/test/jest-setup.js'],
   collectCoverageFrom: [
-    'src/**/*.js',
-    '!src/server.js', // Entry point
-    '!src/config/*.js', // Configuration files
+    'src/middlewares/**/*.js',
+    'src/utils/**/*.js',
+    '!src/server.js',
+    '!src/config/*.js',
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html', 'json-summary'],

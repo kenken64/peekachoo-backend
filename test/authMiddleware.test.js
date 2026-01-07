@@ -46,6 +46,19 @@ describe('Auth Middleware', () => {
       expect(nextFn).not.toHaveBeenCalled();
     });
 
+    it('should return 401 if token is expired', () => {
+      // Create an already expired token
+      const payload = { userId: '123', username: 'testuser' };
+      const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '-1s' });
+      mockReq.headers.authorization = `Bearer ${token}`;
+
+      authMiddleware(mockReq, mockRes, nextFn);
+
+      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Token expired' });
+      expect(nextFn).not.toHaveBeenCalled();
+    });
+
     it('should call next and set user if token is valid', () => {
       const payload = { userId: '123', username: 'testuser' };
       const token = jwt.sign(payload, process.env.JWT_SECRET);
