@@ -8,6 +8,7 @@ const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
 const { prepare, saveDatabase } = require("../config/sqlite");
 const { jwtSecret, rpName, rpID, origin } = require("../config/config");
+const { validateRegistrationInput } = require("../utils/validation");
 
 // WebAuthn configuration
 const rpConfig = {
@@ -51,12 +52,17 @@ exports.startRegistration = async (req, res) => {
 	try {
 		const { username, displayName } = req.body;
 
-		if (!username) {
-			return res.status(400).json({ error: "Username is required" });
+		// Validate and sanitize input to prevent XSS attacks
+		const validation = validateRegistrationInput({ username, displayName });
+		if (!validation.valid) {
+			return res.status(400).json({ error: validation.errors.join(', ') });
 		}
 
+		const sanitizedUsername = validation.sanitized.username;
+		const sanitizedDisplayName = validation.sanitized.displayName;
+
 		// Check if user already exists
-		let user = prepare("SELECT * FROM users WHERE username = ?").get(username);
+		let user = prepare("SELECT * FROM users WHERE username = ?").get(sanitizedUsername);
 
 		if (user) {
 			return res
@@ -68,8 +74,8 @@ exports.startRegistration = async (req, res) => {
 		const userId = uuidv4();
 		prepare(
 			"INSERT INTO users (id, username, display_name) VALUES (?, ?, ?)",
-		).run(userId, username, displayName || username);
-		user = { id: userId, username, display_name: displayName || username };
+		).run(userId, sanitizedUsername, sanitizedDisplayName);
+		user = { id: userId, username: sanitizedUsername, display_name: sanitizedDisplayName };
 
 		// Get existing credentials for user
 		const userCredentials = prepare(
@@ -80,8 +86,8 @@ exports.startRegistration = async (req, res) => {
 			rpName: rpConfig.rpName,
 			rpID: rpConfig.rpID,
 			userID: new TextEncoder().encode(user.id),
-			userName: username,
-			userDisplayName: displayName || username,
+			userName: sanitizedUsername,
+			userDisplayName: sanitizedDisplayName,
 			attestationType: "none",
 			excludeCredentials: userCredentials.map((cred) => ({
 				id: cred.id,
