@@ -69,7 +69,10 @@ COPY --from=builder --chown=appuser:nodejs /app/src ./src
 COPY --from=builder --chown=appuser:nodejs /app/package.json ./
 
 # Create data directory for SQLite database with proper permissions
-RUN mkdir -p data && chown -R appuser:nodejs /app/data
+RUN mkdir -p data && chown -R appuser:nodejs /app/data && chmod 755 /app/data
+
+# Ensure the app directory is owned by appuser
+RUN chown -R appuser:nodejs /app
 
 # Switch to non-root user
 USER appuser

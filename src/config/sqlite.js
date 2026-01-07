@@ -6,8 +6,15 @@ const dbPath = path.join(__dirname, "../../data/peekachoo.db");
 
 // Ensure data directory exists
 const dataDir = path.dirname(dbPath);
-if (!fs.existsSync(dataDir)) {
-	fs.mkdirSync(dataDir, { recursive: true });
+try {
+	if (!fs.existsSync(dataDir)) {
+		console.log(`[SQLite] Creating data directory: ${dataDir}`);
+		fs.mkdirSync(dataDir, { recursive: true });
+	}
+	console.log(`[SQLite] Data directory ready: ${dataDir}`);
+} catch (err) {
+	console.error(`[SQLite] Failed to create data directory: ${err.message}`);
+	throw err;
 }
 
 let db = null;
