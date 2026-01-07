@@ -1,5 +1,5 @@
 # Build stage
-# Build: 2026-01-07-v4
+# Build: 2026-01-07-v5
 FROM node:18-alpine AS builder
 
 # Install required packages for native modules
@@ -10,7 +10,7 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including dev for building native modules)
+# Install all dependencies
 RUN npm ci
 
 # Copy application source
@@ -54,7 +54,6 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 appuser
 
 # Remove npm, yarn, and corepack to eliminate vulnerabilities in system packages
-# These are not needed at runtime since we run "node src/server.js" directly
 RUN rm -rf /usr/local/lib/node_modules/npm \
     /usr/local/bin/npm \
     /usr/local/bin/npx \
@@ -64,19 +63,23 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
     /usr/local/lib/node_modules/corepack \
     /usr/local/bin/corepack
 
-# Copy node_modules and source from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/package.json ./
+# Copy built application from builder stage
+COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=appuser:nodejs /app/src ./src
+COPY --from=builder --chown=appuser:nodejs /app/package.json ./
 
-# Create data directory for SQLite database
-RUN mkdir -p data && chown -R appuser:nodejs /app
+# Create data directory for SQLite database with proper permissions
+RUN mkdir -p data && chown -R appuser:nodejs /app/data
 
 # Switch to non-root user
 USER appuser
 
-# Expose port (Railway will set PORT env variable)
+# Expose port
 EXPOSE 3000
 
-# Start the application directly with node (not npm)
+# Health check (optional, Railway handles this externally)
+# HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+#   CMD node -e "require('http').get('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+
+# Start the application directly with node
 CMD ["node", "src/server.js"]
