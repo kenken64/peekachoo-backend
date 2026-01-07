@@ -1,24 +1,11 @@
-# Build stage
-# Build: 2026-01-07-v5
-FROM node:18-alpine AS builder
+# Simple single-stage Dockerfile
+# Build: 2026-01-07-v6
+FROM node:18-alpine
 
 # Install required packages for native modules
 RUN apk add --no-cache python3 make g++
 
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install all dependencies
-RUN npm ci
-
-# Copy application source
-COPY . .
-
-# Production stage
-FROM node:18-alpine AS runner
-
+# Set working directory
 WORKDIR /app
 
 # Accept build arguments from Railway
@@ -49,40 +36,20 @@ ENV RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
 ENV RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
 ENV RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 appuser
+# Copy package files
+COPY package*.json ./
 
-# Remove npm, yarn, and corepack to eliminate vulnerabilities in system packages
-RUN rm -rf /usr/local/lib/node_modules/npm \
-    /usr/local/bin/npm \
-    /usr/local/bin/npx \
-    /opt/yarn-* \
-    /usr/local/bin/yarn \
-    /usr/local/bin/yarnpkg \
-    /usr/local/lib/node_modules/corepack \
-    /usr/local/bin/corepack
+# Install production dependencies only
+RUN npm ci --only=production
 
-# Copy built application from builder stage
-COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=appuser:nodejs /app/src ./src
-COPY --from=builder --chown=appuser:nodejs /app/package.json ./
+# Copy application source
+COPY src ./src
 
-# Create data directory for SQLite database with proper permissions
-RUN mkdir -p data && chown -R appuser:nodejs /app/data && chmod 755 /app/data
-
-# Ensure the app directory is owned by appuser
-RUN chown -R appuser:nodejs /app
-
-# Switch to non-root user
-USER appuser
+# Create data directory for SQLite database
+RUN mkdir -p data
 
 # Expose port
 EXPOSE 3000
 
-# Health check (optional, Railway handles this externally)
-# HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-#   CMD node -e "require('http').get('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
-
-# Start the application directly with node
+# Start the application
 CMD ["node", "src/server.js"]
