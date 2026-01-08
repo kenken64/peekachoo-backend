@@ -45,24 +45,25 @@ const SQL_INJECTION_PATTERNS = [
  * @returns {object} { valid: boolean, error?: string }
  */
 exports.validateUsername = (username) => {
-	if (!username || typeof username !== 'string') {
-		return { valid: false, error: 'Username is required' };
+	if (!username || typeof username !== "string") {
+		return { valid: false, error: "Username is required" };
 	}
 
 	const trimmed = username.trim();
 
 	if (trimmed.length < 3) {
-		return { valid: false, error: 'Username must be at least 3 characters' };
+		return { valid: false, error: "Username must be at least 3 characters" };
 	}
 
 	if (trimmed.length > 30) {
-		return { valid: false, error: 'Username must be 30 characters or less' };
+		return { valid: false, error: "Username must be 30 characters or less" };
 	}
 
 	if (!USERNAME_REGEX.test(trimmed)) {
 		return {
 			valid: false,
-			error: 'Username can only contain letters, numbers, underscores, and hyphens',
+			error:
+				"Username can only contain letters, numbers, underscores, and hyphens",
 		};
 	}
 
@@ -75,7 +76,7 @@ exports.validateUsername = (username) => {
  * @returns {boolean} true if XSS pattern detected
  */
 exports.containsXSS = (input) => {
-	if (!input || typeof input !== 'string') {
+	if (!input || typeof input !== "string") {
 		return false;
 	}
 
@@ -88,7 +89,7 @@ exports.containsXSS = (input) => {
  * @returns {boolean} true if SQL injection pattern detected
  */
 exports.containsSQLInjection = (input) => {
-	if (!input || typeof input !== 'string') {
+	if (!input || typeof input !== "string") {
 		return false;
 	}
 
@@ -101,17 +102,17 @@ exports.containsSQLInjection = (input) => {
  * @returns {string} Sanitized string
  */
 exports.sanitizeHTML = (input) => {
-	if (!input || typeof input !== 'string') {
-		return '';
+	if (!input || typeof input !== "string") {
+		return "";
 	}
 
 	return input
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#x27;')
-		.replace(/\//g, '&#x2F;');
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#x27;")
+		.replace(/\//g, "&#x2F;");
 };
 
 /**
@@ -120,19 +121,22 @@ exports.sanitizeHTML = (input) => {
  * @returns {object} { valid: boolean, error?: string, sanitized?: string }
  */
 exports.validateDisplayName = (displayName) => {
-	if (!displayName || typeof displayName !== 'string') {
-		return { valid: true, sanitized: '' }; // Display name is optional
+	if (!displayName || typeof displayName !== "string") {
+		return { valid: true, sanitized: "" }; // Display name is optional
 	}
 
 	const trimmed = displayName.trim();
 
 	if (trimmed.length > 50) {
-		return { valid: false, error: 'Display name must be 50 characters or less' };
+		return {
+			valid: false,
+			error: "Display name must be 50 characters or less",
+		};
 	}
 
 	// Check for XSS patterns
 	if (exports.containsXSS(trimmed)) {
-		return { valid: false, error: 'Display name contains invalid characters' };
+		return { valid: false, error: "Display name contains invalid characters" };
 	}
 
 	// Return sanitized version

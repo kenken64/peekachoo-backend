@@ -55,14 +55,16 @@ exports.startRegistration = async (req, res) => {
 		// Validate and sanitize input to prevent XSS attacks
 		const validation = validateRegistrationInput({ username, displayName });
 		if (!validation.valid) {
-			return res.status(400).json({ error: validation.errors.join(', ') });
+			return res.status(400).json({ error: validation.errors.join(", ") });
 		}
 
 		const sanitizedUsername = validation.sanitized.username;
 		const sanitizedDisplayName = validation.sanitized.displayName;
 
 		// Check if user already exists
-		let user = prepare("SELECT * FROM users WHERE username = ?").get(sanitizedUsername);
+		let user = prepare("SELECT * FROM users WHERE username = ?").get(
+			sanitizedUsername,
+		);
 
 		if (user) {
 			return res
@@ -75,7 +77,11 @@ exports.startRegistration = async (req, res) => {
 		prepare(
 			"INSERT INTO users (id, username, display_name) VALUES (?, ?, ?)",
 		).run(userId, sanitizedUsername, sanitizedDisplayName);
-		user = { id: userId, username: sanitizedUsername, display_name: sanitizedDisplayName };
+		user = {
+			id: userId,
+			username: sanitizedUsername,
+			display_name: sanitizedDisplayName,
+		};
 
 		// Get existing credentials for user
 		const userCredentials = prepare(
